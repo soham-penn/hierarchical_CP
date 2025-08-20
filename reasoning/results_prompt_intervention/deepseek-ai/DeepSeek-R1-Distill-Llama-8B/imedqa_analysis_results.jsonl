@@ -1,0 +1,18 @@
+{
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+    "data_name": "imedqa",
+    "avg_thinking_length": 6352.97,
+    "avg_thinking_length_without_context": 5113.855,
+    "thinking_length_t_stat": 3.6179211670183244,
+    "thinking_length_p_value": 0.000376526557149599,
+    "proportion_uncertainty_with_context": 1.160718906969861,
+    "proportion_uncertainty_without_context": 1.309215553686172,
+    "uncertainty_t_stat": -2.5389832004847697,
+    "uncertainty_p_value": 0.011882308592541066,
+    "abstention_percentage_with_context": 0.5,
+    "abstention_percentage_without_context": 2.0,
+    "correct_percentage_with_context": 49.0,
+    "correct_percentage_without_context": 43.5,
+    "answered_percentage_with_context": 91.0,
+    "answered_percentage_without_context": 95.5
+}

@@ -1,0 +1,18 @@
+{
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "data_name": "imedqa",
+    "avg_thinking_length": 5311.65,
+    "avg_thinking_length_without_context": 4126.22,
+    "thinking_length_t_stat": 3.7794885499784177,
+    "thinking_length_p_value": 0.00020763271180496699,
+    "proportion_uncertainty_with_context": 1.165240580926079,
+    "proportion_uncertainty_without_context": 1.190154930996129,
+    "uncertainty_t_stat": -0.35610221152121696,
+    "uncertainty_p_value": 0.7221412562913266,
+    "abstention_percentage_with_context": 1.5,
+    "abstention_percentage_without_context": 3.0,
+    "correct_percentage_with_context": 7.5,
+    "correct_percentage_without_context": 11.0,
+    "answered_percentage_with_context": 21.5,
+    "answered_percentage_without_context": 38.0
+}

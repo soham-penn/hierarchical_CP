@@ -1,0 +1,18 @@
+{
+    "model_name": "Skywork/Skywork-OR1-7B",
+    "data_name": "icraft",
+    "avg_thinking_length": 6440.007299270073,
+    "avg_thinking_length_without_context": 6040.029197080292,
+    "thinking_length_t_stat": 0.8568375791814706,
+    "thinking_length_p_value": 0.39304194101647594,
+    "proportion_uncertainty_with_context": 1.2113580313506116,
+    "proportion_uncertainty_without_context": 1.3514523101127793,
+    "uncertainty_t_stat": -1.592758991651094,
+    "uncertainty_p_value": 0.11353585665395699,
+    "abstention_percentage_with_context": 2.18978102189781,
+    "abstention_percentage_without_context": 0.7299270072992701,
+    "correct_percentage_with_context": 39.416058394160586,
+    "correct_percentage_without_context": 35.03649635036496,
+    "answered_percentage_with_context": 96.35036496350365,
+    "answered_percentage_without_context": 97.8102189781022
+}

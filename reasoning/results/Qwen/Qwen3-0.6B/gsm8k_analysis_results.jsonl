@@ -1,0 +1,18 @@
+{
+    "model_name": "Qwen/Qwen3-0.6B",
+    "data_name": "gsm8k",
+    "avg_thinking_length": 7813.55,
+    "avg_thinking_length_without_context": 6847.245,
+    "thinking_length_t_stat": 1.6872199321687622,
+    "thinking_length_p_value": 0.0931278750063679,
+    "proportion_uncertainty_with_context": 0.8627337157686609,
+    "proportion_uncertainty_without_context": 3.288913167522752,
+    "uncertainty_t_stat": -32.84448287503515,
+    "uncertainty_p_value": 2.7071199413375335e-82,
+    "abstention_percentage_with_context": 6.5,
+    "abstention_percentage_without_context": 87.5,
+    "correct_percentage_with_context": 81.5,
+    "correct_percentage_without_context": 3.0,
+    "answered_percentage_with_context": 100.0,
+    "answered_percentage_without_context": 94.5
+}

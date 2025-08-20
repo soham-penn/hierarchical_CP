@@ -1,0 +1,18 @@
+{
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "data_name": "aime",
+    "avg_thinking_length": 32418.377358490565,
+    "avg_thinking_length_without_context": 26998.0,
+    "thinking_length_t_stat": 2.558617855227123,
+    "thinking_length_p_value": 0.013459861487405241,
+    "proportion_uncertainty_with_context": 0.8766597449620788,
+    "proportion_uncertainty_without_context": 1.7278574353531104,
+    "uncertainty_t_stat": -7.73678834823521,
+    "uncertainty_p_value": 3.323853216804518e-10,
+    "abstention_percentage_with_context": 1.8867924528301887,
+    "abstention_percentage_without_context": 18.867924528301888,
+    "correct_percentage_with_context": 28.30188679245283,
+    "correct_percentage_without_context": 3.7735849056603774,
+    "answered_percentage_with_context": 98.11320754716981,
+    "answered_percentage_without_context": 96.22641509433963
+}

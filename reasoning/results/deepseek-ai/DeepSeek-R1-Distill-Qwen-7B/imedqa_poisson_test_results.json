@@ -1,0 +1,128 @@
+{
+    "contrast_and_doubt_keywords": {
+        "with_context": {
+            "is_poisson": true,
+            "ks_p_value": 0.8577201478799015,
+            "ljung_box_p_value": 0.6759920485919326,
+            "event_count": 104
+        },
+        "without_context": {
+            "is_poisson": true,
+            "ks_p_value": 0.9256956738390414,
+            "ljung_box_p_value": 0.32371501436027167,
+            "event_count": 88
+        }
+    },
+    "doubt_the_question": {
+        "with_context": {
+            "is_poisson": false,
+            "ks_p_value": 0.04738330281376779,
+            "ljung_box_p_value": 0.02620872982145231,
+            "event_count": 20
+        },
+        "without_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 19
+        }
+    },
+    "mistake_keywords": {
+        "with_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 3
+        },
+        "without_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 1
+        }
+    },
+    "redo_keywords": {
+        "with_context": {
+            "is_poisson": true,
+            "ks_p_value": 0.7977580534142953,
+            "ljung_box_p_value": 0.9427202240772854,
+            "event_count": 59
+        },
+        "without_context": {
+            "is_poisson": false,
+            "ks_p_value": 0.6789776001540744,
+            "ljung_box_p_value": 0.024329290394441854,
+            "event_count": 47
+        }
+    },
+    "cant_respond": {
+        "with_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 2
+        },
+        "without_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 1
+        }
+    },
+    "unsure_keywords": {
+        "with_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 3
+        },
+        "without_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 8
+        }
+    },
+    "hesitation_keywords": {
+        "with_context": {
+            "is_poisson": false,
+            "ks_p_value": 0.17000080920389615,
+            "ljung_box_p_value": 1.5855662880144826e-06,
+            "event_count": 600
+        },
+        "without_context": {
+            "is_poisson": false,
+            "ks_p_value": 0.5629973244776487,
+            "ljung_box_p_value": 2.2325286830969597e-05,
+            "event_count": 444
+        }
+    },
+    "missing_info_keywords": {
+        "with_context": {
+            "is_poisson": true,
+            "ks_p_value": 0.32911175010182836,
+            "ljung_box_p_value": 0.4414277063069866,
+            "event_count": 48
+        },
+        "without_context": {
+            "is_poisson": true,
+            "ks_p_value": 0.6722009851109013,
+            "ljung_box_p_value": 0.7685049415957144,
+            "event_count": 41
+        }
+    },
+    "assumption_keywords": {
+        "with_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 6
+        },
+        "without_context": {
+            "is_poisson": "N/A (Few Events)",
+            "ks_p_value": null,
+            "ljung_box_p_value": null,
+            "event_count": 10
+        }
+    }
+}

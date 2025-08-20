@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-mini-reasoning",
+    "data_name": "aime",
+    "avg_thinking_length": 46080.377358490565,
+    "avg_thinking_length_without_context": 33119.339622641506,
+    "thinking_length_t_stat": 3.968706787977557,
+    "thinking_length_p_value": 0.0002226063057433257,
+    "proportion_uncertainty_with_context": 0.49190294522462225,
+    "proportion_uncertainty_without_context": 1.4330839698284046,
+    "uncertainty_t_stat": -9.455996098725349,
+    "uncertainty_p_value": 6.917765976934908e-13,
+    "abstention_percentage_with_context": 1.8867924528301887,
+    "abstention_percentage_without_context": 35.84905660377358,
+    "correct_percentage_with_context": 33.9622641509434,
+    "correct_percentage_without_context": 7.547169811320755,
+    "answered_percentage_with_context": 56.60377358490566,
+    "answered_percentage_without_context": 88.67924528301887
+}

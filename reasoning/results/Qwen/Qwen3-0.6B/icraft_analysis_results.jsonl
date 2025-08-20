@@ -1,0 +1,18 @@
+{
+    "model_name": "Qwen/Qwen3-0.6B",
+    "data_name": "icraft",
+    "avg_thinking_length": 4267.116788321168,
+    "avg_thinking_length_without_context": 3642.4087591240877,
+    "thinking_length_t_stat": 2.8145138102543323,
+    "thinking_length_p_value": 0.005610747972037327,
+    "proportion_uncertainty_with_context": 1.7034863762497192,
+    "proportion_uncertainty_without_context": 1.9546343434382103,
+    "uncertainty_t_stat": -2.8245243091619785,
+    "uncertainty_p_value": 0.00544797233816943,
+    "abstention_percentage_with_context": 3.64963503649635,
+    "abstention_percentage_without_context": 3.64963503649635,
+    "correct_percentage_with_context": 43.06569343065693,
+    "correct_percentage_without_context": 29.927007299270077,
+    "answered_percentage_with_context": 100.0,
+    "answered_percentage_without_context": 100.0
+}

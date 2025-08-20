@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-reasoning-plus",
+    "data_name": "mmlu",
+    "avg_thinking_length": 16379.526315789473,
+    "avg_thinking_length_without_context": 52590.6992481203,
+    "thinking_length_t_stat": -13.311645863064104,
+    "thinking_length_p_value": 3.642651205860294e-26,
+    "proportion_uncertainty_with_context": 0.4980934623917461,
+    "proportion_uncertainty_without_context": 1.6060033750118534,
+    "uncertainty_t_stat": -18.404370060610812,
+    "uncertainty_p_value": 2.9277278802954127e-38,
+    "abstention_percentage_with_context": 4.511278195488721,
+    "abstention_percentage_without_context": 33.08270676691729,
+    "correct_percentage_with_context": 42.10526315789473,
+    "correct_percentage_without_context": 34.58646616541353,
+    "answered_percentage_with_context": 94.73684210526315,
+    "answered_percentage_without_context": 80.45112781954887
+}

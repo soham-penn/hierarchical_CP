@@ -1,0 +1,18 @@
+{
+    "model_name": "Qwen/Qwen3-0.6B",
+    "data_name": "mmlu",
+    "avg_thinking_length": 14111.751879699248,
+    "avg_thinking_length_without_context": 16915.27067669173,
+    "thinking_length_t_stat": -2.404343315589141,
+    "thinking_length_p_value": 0.01758982311395198,
+    "proportion_uncertainty_with_context": 0.7294369761442916,
+    "proportion_uncertainty_without_context": 2.438106222511465,
+    "uncertainty_t_stat": -18.112738646007088,
+    "uncertainty_p_value": 1.3316328103803817e-37,
+    "abstention_percentage_with_context": 9.022556390977442,
+    "abstention_percentage_without_context": 69.92481203007519,
+    "correct_percentage_with_context": 80.45112781954887,
+    "correct_percentage_without_context": 39.849624060150376,
+    "answered_percentage_with_context": 99.24812030075188,
+    "answered_percentage_without_context": 99.24812030075188
+}

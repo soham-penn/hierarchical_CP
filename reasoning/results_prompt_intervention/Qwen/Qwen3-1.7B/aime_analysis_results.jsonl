@@ -1,0 +1,18 @@
+{
+    "model_name": "Qwen/Qwen3-1.7B",
+    "data_name": "aime",
+    "avg_thinking_length": 46921.67924528302,
+    "avg_thinking_length_without_context": 33869.377358490565,
+    "thinking_length_t_stat": 3.4936426891087526,
+    "thinking_length_p_value": 0.0009821490811870908,
+    "proportion_uncertainty_with_context": 0.5379978687077522,
+    "proportion_uncertainty_without_context": 1.5949976699317499,
+    "uncertainty_t_stat": -10.062963442982447,
+    "uncertainty_p_value": 8.365718364352832e-14,
+    "abstention_percentage_with_context": 15.09433962264151,
+    "abstention_percentage_without_context": 56.60377358490566,
+    "correct_percentage_with_context": 41.509433962264154,
+    "correct_percentage_without_context": 3.7735849056603774,
+    "answered_percentage_with_context": 94.33962264150944,
+    "answered_percentage_without_context": 96.22641509433963
+}

@@ -1,0 +1,18 @@
+{
+    "model_name": "Skywork/Skywork-OR1-32B",
+    "data_name": "mmlu",
+    "avg_thinking_length": 11738.270676691729,
+    "avg_thinking_length_without_context": 18509.571428571428,
+    "thinking_length_t_stat": -5.947251595640224,
+    "thinking_length_p_value": 2.3024087321354162e-08,
+    "proportion_uncertainty_with_context": 0.48478282966510566,
+    "proportion_uncertainty_without_context": 1.7275325741456011,
+    "uncertainty_t_stat": -12.687341906032644,
+    "uncertainty_p_value": 1.3059774638764026e-24,
+    "abstention_percentage_with_context": 3.007518796992481,
+    "abstention_percentage_without_context": 39.097744360902254,
+    "correct_percentage_with_context": 79.69924812030075,
+    "correct_percentage_without_context": 45.86466165413533,
+    "answered_percentage_with_context": 98.49624060150376,
+    "answered_percentage_without_context": 99.24812030075188
+}
