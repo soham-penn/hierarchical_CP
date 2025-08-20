@@ -1,0 +1,7 @@
+matplotlib
+wordcloud
+nltk
+scipy
+datasets
+jsonlines
+scikit-learn

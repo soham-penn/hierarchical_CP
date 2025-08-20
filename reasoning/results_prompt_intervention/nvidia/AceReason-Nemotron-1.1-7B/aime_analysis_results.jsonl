@@ -1,0 +1,18 @@
+{
+    "model_name": "nvidia/AceReason-Nemotron-1.1-7B",
+    "data_name": "aime",
+    "avg_thinking_length": 48601.03773584906,
+    "avg_thinking_length_without_context": 42282.811320754714,
+    "thinking_length_t_stat": 1.8553404818720165,
+    "thinking_length_p_value": 0.06921999548284836,
+    "proportion_uncertainty_with_context": 0.6437858542433921,
+    "proportion_uncertainty_without_context": 1.6982850879745035,
+    "uncertainty_t_stat": -9.190481967627607,
+    "uncertainty_p_value": 1.7649693659735238e-12,
+    "abstention_percentage_with_context": 3.7735849056603774,
+    "abstention_percentage_without_context": 24.528301886792452,
+    "correct_percentage_with_context": 69.81132075471697,
+    "correct_percentage_without_context": 11.320754716981133,
+    "answered_percentage_with_context": 88.67924528301887,
+    "answered_percentage_without_context": 96.22641509433963
+}

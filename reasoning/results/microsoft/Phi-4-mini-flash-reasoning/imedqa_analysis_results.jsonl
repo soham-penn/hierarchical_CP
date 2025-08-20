@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-mini-flash-reasoning",
+    "data_name": "imedqa",
+    "avg_thinking_length": 7037.15,
+    "avg_thinking_length_without_context": 9929.72,
+    "thinking_length_t_stat": -3.7136072745823263,
+    "thinking_length_p_value": 0.0002653020050823961,
+    "proportion_uncertainty_with_context": 0.6337460836621822,
+    "proportion_uncertainty_without_context": 1.5901162377297804,
+    "uncertainty_t_stat": -12.279412975518737,
+    "uncertainty_p_value": 3.6280455803974337e-26,
+    "abstention_percentage_with_context": 6.0,
+    "abstention_percentage_without_context": 9.0,
+    "correct_percentage_with_context": 31.0,
+    "correct_percentage_without_context": 35.5,
+    "answered_percentage_with_context": 75.0,
+    "answered_percentage_without_context": 95.5
+}

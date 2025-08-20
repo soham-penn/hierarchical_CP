@@ -1,0 +1,18 @@
+{
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "data_name": "icraft",
+    "avg_thinking_length": 5863.3576642335765,
+    "avg_thinking_length_without_context": 4951.773722627737,
+    "thinking_length_t_stat": 2.37577899635026,
+    "thinking_length_p_value": 0.018906786036764787,
+    "proportion_uncertainty_with_context": 0.9469662718829088,
+    "proportion_uncertainty_without_context": 0.9883269744160077,
+    "uncertainty_t_stat": -0.5196200817668949,
+    "uncertainty_p_value": 0.6041730848722224,
+    "abstention_percentage_with_context": 5.839416058394161,
+    "abstention_percentage_without_context": 0.0,
+    "correct_percentage_with_context": 29.1970802919708,
+    "correct_percentage_without_context": 31.386861313868614,
+    "answered_percentage_with_context": 95.62043795620438,
+    "answered_percentage_without_context": 96.35036496350365
+}

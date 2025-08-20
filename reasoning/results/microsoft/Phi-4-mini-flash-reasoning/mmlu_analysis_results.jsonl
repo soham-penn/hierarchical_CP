@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-mini-flash-reasoning",
+    "data_name": "mmlu",
+    "avg_thinking_length": 10516.3125,
+    "avg_thinking_length_without_context": 23613.03125,
+    "thinking_length_t_stat": -6.684562351405252,
+    "thinking_length_p_value": 7.065149540956687e-09,
+    "proportion_uncertainty_with_context": 0.5206385814245403,
+    "proportion_uncertainty_without_context": 1.6914380996060505,
+    "uncertainty_t_stat": -11.82259056980095,
+    "uncertainty_p_value": 1.2210725405360577e-17,
+    "abstention_percentage_with_context": 0.0,
+    "abstention_percentage_without_context": 43.75,
+    "correct_percentage_with_context": 96.875,
+    "correct_percentage_without_context": 45.3125,
+    "answered_percentage_with_context": 98.4375,
+    "answered_percentage_without_context": 96.875
+}

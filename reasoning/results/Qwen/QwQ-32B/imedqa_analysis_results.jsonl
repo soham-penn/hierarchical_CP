@@ -1,0 +1,18 @@
+{
+    "model_name": "Qwen/QwQ-32B",
+    "data_name": "imedqa",
+    "avg_thinking_length": 7851.84,
+    "avg_thinking_length_without_context": 10564.495,
+    "thinking_length_t_stat": -3.9770787719665073,
+    "thinking_length_p_value": 9.76271064921917e-05,
+    "proportion_uncertainty_with_context": 1.4533839036497849,
+    "proportion_uncertainty_without_context": 1.9533111099294989,
+    "uncertainty_t_stat": -8.699589029278089,
+    "uncertainty_p_value": 1.254640133002852e-15,
+    "abstention_percentage_with_context": 6.0,
+    "abstention_percentage_without_context": 8.5,
+    "correct_percentage_with_context": 89.5,
+    "correct_percentage_without_context": 61.5,
+    "answered_percentage_with_context": 100.0,
+    "answered_percentage_without_context": 100.0
+}

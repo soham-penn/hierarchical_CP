@@ -1,0 +1,18 @@
+{
+    "model_name": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+    "data_name": "mmlu",
+    "avg_thinking_length": 12243.586466165414,
+    "avg_thinking_length_without_context": 20429.375939849626,
+    "thinking_length_t_stat": -7.422455831786191,
+    "thinking_length_p_value": 1.2617287459313964e-11,
+    "proportion_uncertainty_with_context": 0.5104655795617462,
+    "proportion_uncertainty_without_context": 1.924842444979499,
+    "uncertainty_t_stat": -20.115536903697787,
+    "uncertainty_p_value": 5.013748181499637e-42,
+    "abstention_percentage_with_context": 0.0,
+    "abstention_percentage_without_context": 21.804511278195488,
+    "correct_percentage_with_context": 96.2406015037594,
+    "correct_percentage_without_context": 44.3609022556391,
+    "answered_percentage_with_context": 100.0,
+    "answered_percentage_without_context": 100.0
+}

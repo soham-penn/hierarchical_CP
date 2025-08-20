@@ -1,0 +1,18 @@
+{
+    "model_name": "XiaomiMiMo/MiMo-7B-RL-0530",
+    "data_name": "gpqa",
+    "avg_thinking_length": 49212.8,
+    "avg_thinking_length_without_context": 41696.15,
+    "thinking_length_t_stat": 2.561925084621317,
+    "thinking_length_p_value": 0.014387422794948883,
+    "proportion_uncertainty_with_context": 0.9775163615313661,
+    "proportion_uncertainty_without_context": 1.2751599986792646,
+    "uncertainty_t_stat": -3.3477656058061727,
+    "uncertainty_p_value": 0.0018141191259042361,
+    "abstention_percentage_with_context": 20.0,
+    "abstention_percentage_without_context": 27.500000000000004,
+    "correct_percentage_with_context": 57.49999999999999,
+    "correct_percentage_without_context": 27.500000000000004,
+    "answered_percentage_with_context": 97.5,
+    "answered_percentage_without_context": 100.0
+}

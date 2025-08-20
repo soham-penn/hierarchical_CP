@@ -1,0 +1,18 @@
+{
+    "model_name": "Skywork/Skywork-OR1-32B",
+    "data_name": "imedqa",
+    "avg_thinking_length": 8519.29,
+    "avg_thinking_length_without_context": 8953.835,
+    "thinking_length_t_stat": -0.41670851442822254,
+    "thinking_length_p_value": 0.6773407570525873,
+    "proportion_uncertainty_with_context": 1.3227462130405363,
+    "proportion_uncertainty_without_context": 1.7456153035461341,
+    "uncertainty_t_stat": -6.526964866931135,
+    "uncertainty_p_value": 5.454385741129307e-10,
+    "abstention_percentage_with_context": 3.0,
+    "abstention_percentage_without_context": 3.5000000000000004,
+    "correct_percentage_with_context": 85.5,
+    "correct_percentage_without_context": 59.0,
+    "answered_percentage_with_context": 99.5,
+    "answered_percentage_without_context": 99.5
+}

@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-mini-flash-reasoning",
+    "data_name": "icraft",
+    "avg_thinking_length": 5031.423357664234,
+    "avg_thinking_length_without_context": 7157.58394160584,
+    "thinking_length_t_stat": -3.98910058274125,
+    "thinking_length_p_value": 0.00010785130484991847,
+    "proportion_uncertainty_with_context": 0.6566387679218055,
+    "proportion_uncertainty_without_context": 1.8021581156093789,
+    "uncertainty_t_stat": -13.790945794987785,
+    "uncertainty_p_value": 1.299919587843686e-27,
+    "abstention_percentage_with_context": 3.64963503649635,
+    "abstention_percentage_without_context": 4.37956204379562,
+    "correct_percentage_with_context": 40.14598540145985,
+    "correct_percentage_without_context": 33.57664233576642,
+    "answered_percentage_with_context": 86.13138686131386,
+    "answered_percentage_without_context": 97.8102189781022
+}

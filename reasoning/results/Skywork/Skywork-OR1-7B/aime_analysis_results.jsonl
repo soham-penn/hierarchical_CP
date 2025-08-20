@@ -1,0 +1,18 @@
+{
+    "model_name": "Skywork/Skywork-OR1-7B",
+    "data_name": "aime",
+    "avg_thinking_length": 46551.92452830189,
+    "avg_thinking_length_without_context": 47558.339622641506,
+    "thinking_length_t_stat": -0.18893052117527234,
+    "thinking_length_p_value": 0.8508827386726387,
+    "proportion_uncertainty_with_context": 0.7528669469467993,
+    "proportion_uncertainty_without_context": 1.7933241232190429,
+    "uncertainty_t_stat": -7.780017141236976,
+    "uncertainty_p_value": 2.8384576972211595e-10,
+    "abstention_percentage_with_context": 3.7735849056603774,
+    "abstention_percentage_without_context": 18.867924528301888,
+    "correct_percentage_with_context": 54.71698113207547,
+    "correct_percentage_without_context": 9.433962264150944,
+    "answered_percentage_with_context": 88.67924528301887,
+    "answered_percentage_without_context": 90.56603773584906
+}

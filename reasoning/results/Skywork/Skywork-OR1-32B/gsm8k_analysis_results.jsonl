@@ -1,0 +1,18 @@
+{
+    "model_name": "Skywork/Skywork-OR1-32B",
+    "data_name": "gsm8k",
+    "avg_thinking_length": 7559.39,
+    "avg_thinking_length_without_context": 16047.31,
+    "thinking_length_t_stat": -10.834456453349466,
+    "thinking_length_p_value": 8.472645654749104e-22,
+    "proportion_uncertainty_with_context": 0.3666645415136855,
+    "proportion_uncertainty_without_context": 2.9689860096337313,
+    "uncertainty_t_stat": -29.668636592418302,
+    "uncertainty_p_value": 5.455784312482625e-75,
+    "abstention_percentage_with_context": 3.5000000000000004,
+    "abstention_percentage_without_context": 58.5,
+    "correct_percentage_with_context": 97.5,
+    "correct_percentage_without_context": 5.5,
+    "answered_percentage_with_context": 100.0,
+    "answered_percentage_without_context": 98.0
+}

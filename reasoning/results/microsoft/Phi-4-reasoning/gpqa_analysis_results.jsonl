@@ -1,0 +1,18 @@
+{
+    "model_name": "microsoft/Phi-4-reasoning",
+    "data_name": "gpqa",
+    "avg_thinking_length": 24199.925,
+    "avg_thinking_length_without_context": 21031.975,
+    "thinking_length_t_stat": 0.7632945606721104,
+    "thinking_length_p_value": 0.44988060456021106,
+    "proportion_uncertainty_with_context": 0.5728170609570952,
+    "proportion_uncertainty_without_context": 1.4774888352743054,
+    "uncertainty_t_stat": -7.113270301613066,
+    "uncertainty_p_value": 1.4988587697358427e-08,
+    "abstention_percentage_with_context": 15.0,
+    "abstention_percentage_without_context": 25.0,
+    "correct_percentage_with_context": 42.5,
+    "correct_percentage_without_context": 30.0,
+    "answered_percentage_with_context": 77.5,
+    "answered_percentage_without_context": 90.0
+}
