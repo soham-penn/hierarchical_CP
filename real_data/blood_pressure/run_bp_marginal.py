@@ -89,20 +89,20 @@ def run_marginal_experiment_one_clinic(
     --------
     pd.DataFrame : Results with one row per (percentile, method)
     """
-    # Get test clinic data with RANDOM permutation (to preserve exchangeability)
-    test_df_sorted = df[df['clinic_id'] == test_clinic].sort_values('baseline_sbp').reset_index(drop=True)
-    n_test = len(test_df_sorted)
+    # Get test clinic data (original order, no permutation)
+    test_df = df[df['clinic_id'] == test_clinic].reset_index(drop=True)
+    n_test = len(test_df)
 
     if n_test < 5:
         print(f"  Warning: Test clinic {test_clinic} has only {n_test} observations, skipping")
         return pd.DataFrame()
 
-    print(f"  Test clinic {test_clinic}: {n_test} observations (baseline SBP range: {test_df_sorted['baseline_sbp'].min():.1f}-{test_df_sorted['baseline_sbp'].max():.1f})")
+    print(f"  Test clinic {test_clinic}: {n_test} observations (baseline SBP range: {test_df['baseline_sbp'].min():.1f}-{test_df['baseline_sbp'].max():.1f})")
 
-    # Create random permutation to preserve exchangeability
-    np.random.seed(42)  # For reproducibility
-    random_perm = np.random.permutation(n_test)
-    test_df = test_df_sorted.iloc[random_perm].reset_index(drop=True)
+    # Sort by baseline_sbp to find which observations are at SBP percentiles
+    # Create mapping from sorted position to original position
+    test_df_sorted = test_df.sort_values('baseline_sbp').reset_index(drop=False)
+    # test_df_sorted['index'] now contains the original positions in test_df
 
     # Create BASE calibration groups from training clinics (fixed across all percentiles)
     Z_calibration_base = []
@@ -128,24 +128,27 @@ def run_marginal_experiment_one_clinic(
     test_indices = test_df.index.tolist()
     U_test = np.zeros((1, 1))
 
-    # Determine observation indices (0th, N/4-th, N/2-th, 3N/4-th observations)
-    # Test coverage at quantiles of observation count, not covariate quantiles
+    # Determine which observations to test (at baseline SBP percentiles)
+    # Sort by SBP to find percentiles, then map back to original indices
     percentiles = [0, 25, 50, 75]
     percentile_indices = {}
 
     for pct in percentiles:
         if pct == 0:
-            idx = 0
+            sorted_idx = 0
         else:
-            idx = int(np.percentile(np.arange(n_test), pct))
+            sorted_idx = int(np.percentile(np.arange(n_test), pct))
+
+        # Map from sorted position to original position in test_df
+        original_idx = test_df_sorted.iloc[sorted_idx]['index']
 
         # Check if we have enough observations for history
-        if idx < 1:  # Need at least 1 history observation
+        if original_idx < 1:  # Need at least 1 history observation
             continue
 
-        percentile_indices[pct] = idx
+        percentile_indices[pct] = original_idx
 
-    print(f"    Testing percentiles: {list(percentile_indices.keys())}")
+    print(f"    Testing at baseline SBP percentiles: {list(percentile_indices.keys())}")
 
     # Run experiments for each percentile
     all_results = []

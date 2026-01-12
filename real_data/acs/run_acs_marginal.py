@@ -90,20 +90,20 @@ def run_marginal_experiment_one_state(
     --------
     pd.DataFrame : Results with one row per (percentile, method)
     """
-    # Get test state data with RANDOM permutation (to preserve exchangeability)
-    test_df_sorted = df[df['state_abb'] == test_state].sort_values('income').reset_index(drop=True)
-    n_test = len(test_df_sorted)
+    # Get test state data (original order, no permutation)
+    test_df = df[df['state_abb'] == test_state].reset_index(drop=True)
+    n_test = len(test_df)
 
     if n_test < 5:
         print(f"  Warning: Test state {test_state} has only {n_test} observations, skipping")
         return pd.DataFrame()
 
-    print(f"  Test state {test_state}: {n_test} observations (income range: ${test_df_sorted['income'].min():,.0f}-${test_df_sorted['income'].max():,.0f})")
+    print(f"  Test state {test_state}: {n_test} observations (income range: ${test_df['income'].min():,.0f}-${test_df['income'].max():,.0f})")
 
-    # Create random permutation to preserve exchangeability
-    np.random.seed(42)  # For reproducibility
-    random_perm = np.random.permutation(n_test)
-    test_df = test_df_sorted.iloc[random_perm].reset_index(drop=True)
+    # Sort by income to find which observations are at income percentiles
+    # Create mapping from sorted position to original position
+    test_df_sorted = test_df.sort_values('income').reset_index(drop=False)
+    # test_df_sorted['index'] now contains the original positions in test_df
 
     # Create calibration groups from training states ONLY
     # Baseline methods should NOT see any test state data
@@ -136,24 +136,27 @@ def run_marginal_experiment_one_state(
     U_calibration = np.zeros((n_cal_groups, 1))
     U_test = np.zeros((1, 1))
 
-    # Determine observation indices (0th, N/4-th, N/2-th, 3N/4-th observations)
-    # Test coverage at quantiles of observation count, not covariate quantiles
+    # Determine which observations to test (at income percentiles)
+    # Sort by income to find percentiles, then map back to original indices
     percentiles = [0, 25, 50, 75]
     percentile_indices = {}
 
     for pct in percentiles:
         if pct == 0:
-            idx = 0
+            sorted_idx = 0
         else:
-            idx = int(np.percentile(np.arange(n_test), pct))
+            sorted_idx = int(np.percentile(np.arange(n_test), pct))
+
+        # Map from sorted position to original position in test_df
+        original_idx = test_df_sorted.iloc[sorted_idx]['index']
 
         # Check if we have enough observations for history
-        if idx < 1:  # Need at least 1 history observation
+        if original_idx < 1:  # Need at least 1 history observation
             continue
 
-        percentile_indices[pct] = idx
+        percentile_indices[pct] = original_idx
 
-    print(f"    Testing percentiles: {list(percentile_indices.keys())}")
+    print(f"    Testing at income percentiles: {list(percentile_indices.keys())}")
 
     # Run experiments for each percentile
     all_results = []
