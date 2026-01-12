@@ -4,14 +4,14 @@
 
 ## Coverage by Percentile and Method
 
-| Method | 25th %ile | 50th %ile | 75th %ile | Overall Coverage | Mean Width | Median Width | Prop Infinite | Coverage - Target |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| HCP | 1.0 | 1.0 | 1.0 | 1.0 | 56.8587 | 56.8587 | 0.0 | 0.2 |
-| HCP++ | 1.0 | 0.6667 | 0.5333 | 0.7333 | 47.2759 | 48.5654 | 0.0 | -0.0667 |
-| HCP.sample | 1.0 | 1.0 | 0.8667 | 0.9556 | 52.4581 | 52.0831 | 0.0 | 0.1556 |
-| Pooling | 1.0 | 0.8 | 0.8667 | 0.8889 | 45.5129 | 45.5129 | 0.0 | 0.0889 |
-| Repeated | 1.0 | 1.0 | 1.0 | 1.0 | 56.6264 | 56.8587 | 0.0 | 0.2 |
-| Subsampling | 1.0 | 0.8 | 1.0 | 0.9333 | 57.9845 | 59.3951 | 0.0 | 0.1333 |
+| Method | 0th %ile | 25th %ile | 50th %ile | 75th %ile | Overall Coverage | Mean Width | Median Width | Prop Infinite | Coverage - Target |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HCP | 0.9333 | 0.7692 | 0.9333 | 1.0 | 0.9138 | 56.8587 | 56.8587 | 0.0 | 0.1138 |
+| HCP++ | 0.9333 | 0.7692 | 0.8 | 0.8 | 0.8276 | 50.7545 | 48.1507 | 0.0 | 0.0276 |
+| HCP.sample | 0.9333 | 0.7692 | 0.9333 | 0.8667 | 0.8793 | 47.6596 | 46.9795 | 0.0 | 0.0793 |
+| Pooling | 0.8667 | 0.5385 | 0.6 | 0.8 | 0.7069 | 45.5129 | 45.5129 | 0.0 | -0.0931 |
+| Repeated | 1.0 | 0.8462 | 1.0 | 1.0 | 0.9655 | 56.9134 | 56.8587 | 0.0 | 0.1655 |
+| Subsampling | 0.9333 | 0.8462 | 0.8 | 0.8667 | 0.8621 | 60.934 | 61.357 | 0.0 | 0.0621 |
 
 **Notes:**
 - Coverage values show the proportion of true outcomes falling within prediction intervals
