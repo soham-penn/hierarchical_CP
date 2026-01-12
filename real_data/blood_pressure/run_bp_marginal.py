@@ -89,15 +89,20 @@ def run_marginal_experiment_one_clinic(
     --------
     pd.DataFrame : Results with one row per (percentile, method)
     """
-    # Get test clinic data, ordered by baseline SBP
-    test_df = df[df['clinic_id'] == test_clinic].sort_values('baseline_sbp').reset_index(drop=True)
-    n_test = len(test_df)
+    # Get test clinic data with RANDOM permutation (to preserve exchangeability)
+    test_df_sorted = df[df['clinic_id'] == test_clinic].sort_values('baseline_sbp').reset_index(drop=True)
+    n_test = len(test_df_sorted)
 
     if n_test < 5:
         print(f"  Warning: Test clinic {test_clinic} has only {n_test} observations, skipping")
         return pd.DataFrame()
 
-    print(f"  Test clinic {test_clinic}: {n_test} observations (baseline SBP range: {test_df['baseline_sbp'].min():.1f}-{test_df['baseline_sbp'].max():.1f})")
+    print(f"  Test clinic {test_clinic}: {n_test} observations (baseline SBP range: {test_df_sorted['baseline_sbp'].min():.1f}-{test_df_sorted['baseline_sbp'].max():.1f})")
+
+    # Create random permutation to preserve exchangeability
+    np.random.seed(42)  # For reproducibility
+    random_perm = np.random.permutation(n_test)
+    test_df = test_df_sorted.iloc[random_perm].reset_index(drop=True)
 
     # Create BASE calibration groups from training clinics (fixed across all percentiles)
     Z_calibration_base = []
@@ -123,7 +128,8 @@ def run_marginal_experiment_one_clinic(
     test_indices = test_df.index.tolist()
     U_test = np.zeros((1, 1))
 
-    # Determine percentile indices (0th, 25th, 50th, 75th)
+    # Determine observation indices (0th, N/4-th, N/2-th, 3N/4-th observations)
+    # Test coverage at quantiles of observation count, not covariate quantiles
     percentiles = [0, 25, 50, 75]
     percentile_indices = {}
 
@@ -131,10 +137,10 @@ def run_marginal_experiment_one_clinic(
         if pct == 0:
             idx = 0
         else:
-            idx = int(np.percentile(np.arange(n_test - 1), pct))  # Percentile of n_test-1 observations
+            idx = int(np.percentile(np.arange(n_test), pct))
 
-        # Check if next observation exists
-        if idx + 1 >= n_test:
+        # Check if we have enough observations for history
+        if idx < 1:  # Need at least 1 history observation
             continue
 
         percentile_indices[pct] = idx

@@ -90,15 +90,20 @@ def run_marginal_experiment_one_state(
     --------
     pd.DataFrame : Results with one row per (percentile, method)
     """
-    # Get test state data, ordered by income
-    test_df = df[df['state_abb'] == test_state].sort_values('income').reset_index(drop=True)
-    n_test = len(test_df)
+    # Get test state data with RANDOM permutation (to preserve exchangeability)
+    test_df_sorted = df[df['state_abb'] == test_state].sort_values('income').reset_index(drop=True)
+    n_test = len(test_df_sorted)
 
     if n_test < 5:
         print(f"  Warning: Test state {test_state} has only {n_test} observations, skipping")
         return pd.DataFrame()
 
-    print(f"  Test state {test_state}: {n_test} observations (income range: ${test_df['income'].min():,.0f}-${test_df['income'].max():,.0f})")
+    print(f"  Test state {test_state}: {n_test} observations (income range: ${test_df_sorted['income'].min():,.0f}-${test_df_sorted['income'].max():,.0f})")
+
+    # Create random permutation to preserve exchangeability
+    np.random.seed(42)  # For reproducibility
+    random_perm = np.random.permutation(n_test)
+    test_df = test_df_sorted.iloc[random_perm].reset_index(drop=True)
 
     # Create calibration groups from training states ONLY
     # Baseline methods should NOT see any test state data
@@ -131,7 +136,8 @@ def run_marginal_experiment_one_state(
     U_calibration = np.zeros((n_cal_groups, 1))
     U_test = np.zeros((1, 1))
 
-    # Determine percentile indices (0th, 25th, 50th, 75th)
+    # Determine observation indices (0th, N/4-th, N/2-th, 3N/4-th observations)
+    # Test coverage at quantiles of observation count, not covariate quantiles
     percentiles = [0, 25, 50, 75]
     percentile_indices = {}
 
@@ -139,10 +145,10 @@ def run_marginal_experiment_one_state(
         if pct == 0:
             idx = 0
         else:
-            idx = int(np.percentile(np.arange(n_test - 1), pct))  # Percentile of n_test-1 observations
+            idx = int(np.percentile(np.arange(n_test), pct))
 
-        # Check if next observation exists
-        if idx + 1 >= n_test:
+        # Check if we have enough observations for history
+        if idx < 1:  # Need at least 1 history observation
             continue
 
         percentile_indices[pct] = idx
