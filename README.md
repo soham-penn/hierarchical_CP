@@ -222,20 +222,25 @@ Saved to `DGP/resultsDGP/`:
 ## Key Findings
 
 ### ACS Experiments
-- **Setup**: 21 training states, 19 test states (emerging destinations)
+- **Setup**: 25 training states, 24 test states (emerging destinations)
+  - 1,180 observations across 49 states
+  - Per-state top 25% income filtering
 - **Target**: 90% coverage (α=0.1)
 - **Results**:
-  - HCP++: ~96% coverage, narrow intervals
-  - Pooling: ~98% coverage, efficient
-  - All methods achieve nominal coverage
+  - HCP++: 100% coverage, ~2.53 width, 6.7% infinite intervals
+  - HCP.sample: 87% coverage, ~1.90 width, 0% infinite
+  - HCP: 87% coverage, ~2.25 width, 0% infinite
+  - Pooling: 85% coverage, ~1.99 width, 0% infinite
 
 ### Blood Pressure Experiments
 - **Setup**: 17 training clinics, 15 test clinics
+  - 605 observations across 32 clinics
 - **Target**: 80% coverage (α=0.2)
 - **Results**:
-  - HCP++: ~87% coverage
-  - HCP.sample: ~90% coverage
-  - Baseline methods conservative (high variance, small sample)
+  - HCP++: 87% coverage, ~50.5 mmHg width, 0% infinite
+  - HCP.sample: 90% coverage, ~48.3 mmHg width, 0% infinite
+  - HCP: 100% coverage, ~56.9 mmHg width, 0% infinite
+  - Pooling: 97% coverage, ~45.5 mmHg width, 0% infinite
 
 ## Technical Notes
 
