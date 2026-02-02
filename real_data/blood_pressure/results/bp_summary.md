@@ -1,17 +1,17 @@
-# Blood Pressure Marginal Coverage Results
+# Blood Pressure Coverage Results
 
 **Target Coverage:** 80.0%
 
 ## Coverage by Percentile and Method
 
-| Method | 0th %ile | 25th %ile | 50th %ile | 75th %ile | Overall Coverage | Mean Width | Median Width | Prop Infinite | Coverage - Target |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| HCP | 0.9333 | 0.7692 | 0.9333 | 1.0 | 0.9138 | 56.8587 | 56.8587 | 0.0 | 0.1138 |
-| HCP++ | 0.9333 | 0.7692 | 0.8 | 0.8 | 0.8276 | 50.7545 | 48.1507 | 0.0 | 0.0276 |
-| HCP.sample | 0.9333 | 0.7692 | 0.9333 | 0.8667 | 0.8793 | 47.6596 | 46.9795 | 0.0 | 0.0793 |
-| Pooling | 0.8667 | 0.5385 | 0.6 | 0.8 | 0.7069 | 45.5129 | 45.5129 | 0.0 | -0.0931 |
-| Repeated | 1.0 | 0.8462 | 1.0 | 1.0 | 0.9655 | 56.9134 | 56.8587 | 0.0 | 0.1655 |
-| Subsampling | 0.9333 | 0.8462 | 0.8 | 0.8667 | 0.8621 | 60.934 | 61.357 | 0.0 | 0.0621 |
+| Method | 0th %ile | 25th %ile | 50th %ile | 75th %ile | Width 0th | Width 25th | Width 50th | Width 75th | Overall Coverage | Overall Mean Width | Overall Median Width | Prop Infinite | Coverage - Target |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| HCP | 0.9333 | 0.8 | 0.9333 | 1.0 | 56.8587 | 56.8587 | 56.8587 | 56.8587 | 0.9167 | 56.8587 | 56.8587 | 0.0 | 0.1167 |
+| HCP++ | 0.9333 | 0.8 | 0.8 | 0.7333 | 50.6854 | 49.88 | 52.4389 | 49.455 | 0.8167 | 50.6148 | 48.0131 | 0.0 | 0.0167 |
+| HCP.sample | 0.9333 | 0.7333 | 0.8 | 0.8 | 48.1447 | 49.3822 | 48.8904 | 48.3122 | 0.8167 | 48.6824 | 46.6615 | 0.0 | 0.0167 |
+| Pooling | 0.8667 | 0.6 | 0.6 | 0.8 | 45.5129 | 45.5129 | 45.5129 | 45.5129 | 0.7167 | 45.5129 | 45.5129 | 0.0 | -0.0833 |
+| Repeated | 0.9333 | 0.8 | 0.9333 | 1.0 | 56.4704 | 57.5769 | 57.311 | 57.1623 | 0.9167 | 57.1302 | 56.8587 | 0.0 | 0.1167 |
+| Subsampling | 0.9333 | 0.7333 | 0.9333 | 1.0 | 61.301 | 62.6149 | 62.132 | 68.1349 | 0.9 | 63.5457 | 60.7247 | 0.0 | 0.1 |
 
 **Notes:**
 - Coverage values show the proportion of true outcomes falling within prediction intervals

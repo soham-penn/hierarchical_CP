@@ -24,8 +24,9 @@ def csv_to_markdown_table(csv_path, md_path, title, target_coverage):
     df = pd.read_csv(csv_path)
 
     # Round numeric columns
-    numeric_cols = ['0', '25', '50', '75', 'overall_coverage', 'mean_width',
-                    'median_width', 'coverage_diff']
+    numeric_cols = ['0', '25', '50', '75', 'width_0', 'width_25', 'width_50', 'width_75',
+                    'overall_coverage', 'overall_mean_width', 'overall_median_width',
+                    'mean_width', 'median_width', 'coverage_diff']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = df[col].round(4)
@@ -36,7 +37,13 @@ def csv_to_markdown_table(csv_path, md_path, title, target_coverage):
         '25': '25th %ile',
         '50': '50th %ile',
         '75': '75th %ile',
+        'width_0': 'Width 0th',
+        'width_25': 'Width 25th',
+        'width_50': 'Width 50th',
+        'width_75': 'Width 75th',
         'overall_coverage': 'Overall Coverage',
+        'overall_mean_width': 'Overall Mean Width',
+        'overall_median_width': 'Overall Median Width',
         'mean_width': 'Mean Width',
         'median_width': 'Median Width',
         'total_infinite': 'Prop Infinite',
@@ -48,9 +55,11 @@ def csv_to_markdown_table(csv_path, md_path, title, target_coverage):
     if 'target_coverage' in df.columns:
         df = df.drop(columns=['target_coverage'])
 
-    # Reorder columns
+    # Reorder columns - coverage percentiles, then width percentiles, then overall stats
     col_order = ['method', '0th %ile', '25th %ile', '50th %ile', '75th %ile',
-                 'Overall Coverage', 'Mean Width', 'Median Width',
+                 'Width 0th', 'Width 25th', 'Width 50th', 'Width 75th',
+                 'Overall Coverage', 'Overall Mean Width', 'Overall Median Width',
+                 'Mean Width', 'Median Width',
                  'Prop Infinite', 'Coverage - Target']
     df = df[[c for c in col_order if c in df.columns]]
 
