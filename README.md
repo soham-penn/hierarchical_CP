@@ -19,7 +19,7 @@ This repository implements and evaluates hierarchical conformal prediction metho
 ## Repository Structure
 
 ```
-hierarchical_new/
+hierarchical_CP/
 ├── DGP/                          # Simulated data experiments
 │   ├── dgp_specification.py      # DGP definitions (default & nonlinear)
 │   ├── data_generation.py        # Calibration & test data generation
@@ -38,20 +38,23 @@ hierarchical_new/
 │
 ├── real_data/                    # Real data experiments
 │   ├── acs/                      # ACS income prediction
-│   │   ├── data/                 # Data files
-│   │   ├── results/              # Results (sequential/ and marginal/)
+│   │   ├── data/                 # Data files (excluded from git)
+│   │   ├── results/              # Experimental results
+│   │   ├── plots/                # Generated plots
 │   │   ├── load_acs_data.py      # Download ACS PUMS data
 │   │   ├── data_processing.py    # Data cleaning/filtering
-│   │   ├── run_acs_sequential.py # Sequential experiments
-│   │   └── run_acs_marginal.py   # Marginal experiments
+│   │   └── run_acs.py            # Run ACS experiments
 │   │
 │   ├── blood_pressure/           # BP clinical trial
-│   │   ├── data/                 # Data files
-│   │   ├── results/              # Results (marginal/)
+│   │   ├── data/                 # Data files (excluded from git)
+│   │   ├── results/              # Experimental results
+│   │   ├── plots/                # Generated plots
 │   │   ├── load_bp_data.py       # Load BP Excel files
 │   │   ├── data_processing.py    # Data cleaning/filtering
-│   │   └── run_bp_marginal.py    # Marginal experiments
+│   │   └── run_bp.py             # Run BP experiments
 │   │
+│   ├── plot_results.py           # Plotting utilities
+│   ├── format_results.py         # Result formatting
 │   └── README.md                 # Real data documentation
 │
 ├── scores.py                     # Score functions & weighted quantile
@@ -75,8 +78,8 @@ pip install numpy pandas scikit-learn matplotlib folktables
 ### Setup
 
 ```bash
-git clone <repository-url>
-cd hierarchical_new
+git clone https://github.com/soham-penn/hierarchical_CP.git
+cd hierarchical_CP
 ```
 
 ## Usage
@@ -115,23 +118,19 @@ Quick start:
 # ACS experiments
 cd real_data/acs
 python3 load_acs_data.py --year 2018 --output data/acs_data_all50states.csv --all_states
-python3 run_acs_marginal.py data/acs_data_all50states.csv --top_income_pct 25 --alpha 0.1
+python3 run_acs.py data/acs_data_all50states.csv --top_income_pct 25 --alpha 0.1
 
 # Blood Pressure experiments
 cd real_data/blood_pressure
 python3 load_bp_data.py data/ --output data/bp_data.csv
-python3 run_bp_marginal.py data/bp_data.csv --n_test_clinics 15 --alpha 0.2
+python3 run_bp.py data/bp_data.csv --n_test_clinics 15 --alpha 0.2
+
+# Generate plots (optional - automatically done by run scripts)
+cd real_data
+python3 plot_results.py --all
 ```
 
-## Experiment Types
-
-### Sequential (Online) Experiments
-
-Test observations arrive sequentially over time. Methods adapt as new observations are seen.
-
-- **Setup**: Predict each new observation using all previously observed data
-- **Coverage**: Tested at each time point
-- **Use case**: Online learning, temporal data
+## Experiment Design
 
 ### Marginal Coverage Experiments
 
@@ -207,42 +206,45 @@ Saved to `DGP/resultsDGP/`:
 ### Real Data Results
 
 **ACS Results** (`real_data/acs/results/`):
-- `sequential/`: Sequential experiment results
-  - `acs_sequential_detailed.csv`: Per-observation predictions
-  - `acs_sequential_summary.csv`: Method summaries
-- `marginal/`: Marginal experiment results
-  - `acs_marginal_detailed.csv`: Per-percentile predictions
-  - `acs_marginal_summary.csv`: Method summaries
+- `acs_detailed.csv`: Per-percentile predictions (576 predictions)
+- `acs_summary.csv`: Method summaries with per-percentile coverage and width
+- `acs_summary.md`: Formatted results table
 
 **BP Results** (`real_data/blood_pressure/results/`):
-- `marginal/`: Marginal experiment results
-  - `bp_marginal_detailed.csv`: Per-observation predictions
-  - `bp_marginal_summary.csv`: Method summaries
+- `bp_detailed.csv`: Per-percentile predictions (360 predictions)
+- `bp_summary.csv`: Method summaries with per-percentile coverage and width
+- `bp_summary.md`: Formatted results table
+
+**Plots** (`real_data/*/plots/`):
+- Coverage by method and percentile
+- Interval width by method and percentile
 
 ## Key Findings
 
 ### ACS Experiments
-- **Setup**: 25 training states, 15 test states (emerging destinations)
+- **Setup**: 25 training states, 24 test states (emerging destinations)
   - 1,180 observations across 49 states
   - Per-state top 25% income filtering
   - Testing at income percentiles: 0th, 25th, 50th, 75th
+  - All test states included (even with 1 observation)
 - **Target**: 90% coverage (α=0.1)
-- **Results** (330 predictions):
-  - HCP++: 96% coverage, ~2.43 width, 12.7% infinite intervals
-  - HCP.sample: 89% coverage, ~1.58 width, 0% infinite
-  - HCP: 87% coverage, ~2.25 width, 0% infinite
-  - Pooling: 85% coverage, ~1.99 width, 0% infinite
+- **Results** (576 predictions):
+  - HCP++: 99% overall coverage, ~2.52 width, 5.2% infinite intervals
+  - HCP.sample: 90% coverage, ~1.91 width, 0% infinite
+  - HCP: 92% coverage, ~2.25 width, 0% infinite
+  - Pooling: 91% coverage, ~1.99 width, 0% infinite
 
 ### Blood Pressure Experiments
 - **Setup**: 17 training clinics, 15 test clinics
   - 605 observations across 32 clinics
   - Testing at baseline SBP percentiles: 0th, 25th, 50th, 75th
+  - All test clinics included
 - **Target**: 80% coverage (α=0.2)
-- **Results** (348 predictions):
-  - HCP++: 83% coverage, ~50.8 mmHg width, 0% infinite
-  - HCP.sample: 88% coverage, ~47.7 mmHg width, 0% infinite
-  - HCP: 91% coverage, ~56.9 mmHg width, 0% infinite
-  - Pooling: 71% coverage, ~45.5 mmHg width, 0% infinite
+- **Results** (360 predictions):
+  - HCP++: 82% coverage, ~50.6 mmHg width, 0% infinite
+  - HCP.sample: 82% coverage, ~48.1 mmHg width, 0% infinite
+  - HCP: 92% coverage, ~56.9 mmHg width, 0% infinite
+  - Pooling: 70% coverage, ~45.5 mmHg width, 0% infinite
 
 ## Technical Notes
 
