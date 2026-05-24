@@ -1,34 +1,48 @@
 """
 Hierarchical Conformal Prediction Methods Package
 
-This package implements various hierarchical conformal prediction methods
-including HCP++, HCP.sample, and baseline methods.
+Exports all method functions for hierarchical conformal prediction:
+  - mu_methods  : mu-estimation objects (RF and OLS)
+  - baseline_hcp: HCP, Pooling, Subsampling, Repeated Subsampling
+    - donor_hcp   : donor-HCP randomized + derandomized
+    - sample_hcp  : sample-HCP randomized + derandomized
 """
 
 from .mu_methods import (
     create_mu_method_random_forest_offset,
     create_mu_method_random_forest_global_only,
     create_mu_method_ols_offset,
-    create_mu_method_ols_global_only
+    create_mu_method_ols_global_only,
 )
 from .baseline_hcp import (
     compute_hcp_interval_radius,
     compute_pooling_interval_radius,
     compute_subsampling_once_interval_radius,
-    compute_repeated_subsampling_interval_radius
+    compute_repeated_subsampling_interval_radius,
 )
-from .hcp_plus import compute_hcp_plus_interval
-from .hcp_sample import compute_hcp_sample_interval
+from .donor_hcp import (
+    compute_donor_hcp_randomized_interval,
+    compute_donor_hcp_derandomized_interval,
+)
+from .sample_hcp import (
+    compute_sample_hcp_randomized_interval,
+    compute_sample_hcp_derandomized_interval,
+)
 
 __all__ = [
+    # mu-methods
     'create_mu_method_random_forest_offset',
     'create_mu_method_random_forest_global_only',
     'create_mu_method_ols_offset',
     'create_mu_method_ols_global_only',
+    # baseline methods
     'compute_hcp_interval_radius',
     'compute_pooling_interval_radius',
     'compute_subsampling_once_interval_radius',
     'compute_repeated_subsampling_interval_radius',
-    'compute_hcp_plus_interval',
-    'compute_hcp_sample_interval'
+    # Donor-HCP and Sample-HCP (renamed API)
+    'compute_donor_hcp_randomized_interval',
+    'compute_donor_hcp_derandomized_interval',
+    'compute_sample_hcp_randomized_interval',
+    'compute_sample_hcp_derandomized_interval',
 ]

@@ -1,11 +1,11 @@
 """
 Baseline HCP-Style Methods
 
-This module implements baseline hierarchical conformal prediction methods:
-- HCP (standard hierarchical CP)
-- Pooling
-- Subsampling (once)
-- Repeated subsampling
+Implements four baseline hierarchical conformal prediction methods:
+  - HCP       : weighted quantile with all calibration scores + one infinity
+  - Pooling   : weighted quantile with all calibration scores, no infinity
+  - Subsampling     : one score sampled per group + infinity, uniform weights
+  - Repeated Subsampling : mean of R independent single-subsampling quantiles
 """
 
 import numpy as np
@@ -17,33 +17,34 @@ from scores import weighted_quantile
 
 def compute_hcp_interval_radius(scores_list, alpha):
     """
-    Compute HCP interval radius using all calibration scores with uniform weighting.
+    Compute the HCP interval radius.
 
-    Parameters:
-    -----------
-    scores_list : list of arrays
-        List where scores_list[k] contains scores for calibration group k
+    Each calibration group j contributes N_j scores with weight 1/((K+1)*N_j),
+    and one infinity score has weight 1/(K+1).  Total weight = 1.
+
+    Parameters
+    ----------
+    scores_list : list of array-like
+        Conformity scores per calibration group.
     alpha : float
-        Miscoverage level
+        Miscoverage level; returns the (1-alpha)-quantile.
 
-    Returns:
-    --------
-    float : Interval radius
+    Returns
+    -------
+    float
+        Interval radius (may be inf if scores_list is empty).
     """
     K = len(scores_list)
-    Nk = np.array([len(scores) for scores in scores_list])
+    if K == 0:
+        return np.inf
 
-    # Combine all scores
-    all_scores = []
-    all_weights = []
+    all_scores, all_weights = [], []
+    for scores in scores_list:
+        n = len(scores)
+        if n > 0:
+            all_scores.extend(scores)
+            all_weights.extend([1.0 / ((K + 1) * n)] * n)
 
-    for k in range(K):
-        nk = Nk[k]
-        if nk > 0:
-            all_scores.extend(scores_list[k])
-            all_weights.extend([1.0 / ((K + 1) * nk)] * nk)
-
-    # Add infinity with weight 1/(K+1)
     all_scores.append(np.inf)
     all_weights.append(1.0 / (K + 1))
 
@@ -52,33 +53,35 @@ def compute_hcp_interval_radius(scores_list, alpha):
 
 def compute_pooling_interval_radius(scores_list, alpha):
     """
-    Compute pooling interval radius (no infinity score).
+    Compute the Pooling interval radius.
 
-    Parameters:
-    -----------
-    scores_list : list of arrays
-        List where scores_list[k] contains scores for calibration group k
+    Each calibration group j contributes N_j scores with weight 1/(K*N_j).
+    No infinity score is added.
+
+    Parameters
+    ----------
+    scores_list : list of array-like
+        Conformity scores per calibration group.
     alpha : float
-        Miscoverage level
+        Miscoverage level; returns the (1-alpha)-quantile.
 
-    Returns:
-    --------
-    float : Interval radius
+    Returns
+    -------
+    float
+        Interval radius (inf if no scores).
     """
     K = len(scores_list)
-    Nk = np.array([len(scores) for scores in scores_list])
+    if K == 0:
+        return np.inf
 
-    # Combine all scores without infinity
-    all_scores = []
-    all_weights = []
+    all_scores, all_weights = [], []
+    for scores in scores_list:
+        n = len(scores)
+        if n > 0:
+            all_scores.extend(scores)
+            all_weights.extend([1.0 / (K * n)] * n)
 
-    for k in range(K):
-        nk = Nk[k]
-        if nk > 0:
-            all_scores.extend(scores_list[k])
-            all_weights.extend([1.0 / (K * nk)] * nk)
-
-    if len(all_scores) == 0:
+    if not all_scores:
         return np.inf
 
     return weighted_quantile(all_scores, all_weights, alpha)
@@ -86,73 +89,66 @@ def compute_pooling_interval_radius(scores_list, alpha):
 
 def compute_subsampling_once_interval_radius(scores_list, alpha):
     """
-    Compute subsampling interval radius (sample one score from each group).
+    Compute the Subsampling (once) interval radius.
 
-    Parameters:
-    -----------
-    scores_list : list of arrays
-        List where scores_list[k] contains scores for calibration group k
+    Sample one score uniformly at random from each non-empty calibration group,
+    append one infinity, and apply uniform weights 1/(K+1).
+
+    Parameters
+    ----------
+    scores_list : list of array-like
+        Conformity scores per calibration group.
     alpha : float
-        Miscoverage level
+        Miscoverage level; returns the (1-alpha)-quantile.
 
-    Returns:
-    --------
-    float : Interval radius
+    Returns
+    -------
+    float
+        Interval radius.
     """
     K = len(scores_list)
     if K == 0:
         return np.inf
 
-    # Sample one score from each group
-    sampled_scores = []
-    for scores in scores_list:
-        if len(scores) > 0:
-            sampled_scores.append(np.random.choice(scores))
-
-    # Add infinity
-    sampled_scores.append(np.inf)
-
-    # Uniform weights
-    weights = np.ones(len(sampled_scores)) / (K + 1)
-
-    return weighted_quantile(sampled_scores, weights, alpha)
+    sampled = [np.random.choice(s) for s in scores_list if len(s) > 0]
+    sampled.append(np.inf)
+    weights = np.ones(len(sampled)) / (K + 1)
+    return weighted_quantile(sampled, weights, alpha)
 
 
 def compute_repeated_subsampling_interval_radius(scores_list, alpha,
                                                  number_repetitions):
     """
-    Compute repeated subsampling interval radius.
+    Compute the Repeated Subsampling interval radius.
 
-    Parameters:
-    -----------
-    scores_list : list of arrays
-        List where scores_list[k] contains scores for calibration group k
+    Runs `number_repetitions` independent single-subsampling draws and returns
+    the mean of the resulting quantiles.  This matches the theoretical definition
+    (average over repetitions) and guarantees the repeated estimate is <=
+    the single-subsampling estimate in expectation (variance reduction, same mean).
+
+    Parameters
+    ----------
+    scores_list : list of array-like
+        Conformity scores per calibration group.
     alpha : float
-        Miscoverage level
+        Miscoverage level; returns the (1-alpha)-quantile.
     number_repetitions : int
-        Number of times to repeat the subsampling
+        Number of independent subsampling draws to average over.
 
-    Returns:
-    --------
-    float : Interval radius
+    Returns
+    -------
+    float
+        Interval radius.
     """
     K = len(scores_list)
     if K == 0 or number_repetitions <= 0:
         return np.inf
 
-    # Sample scores repeatedly
-    sampled_scores = []
+    quantiles = []
     for _ in range(number_repetitions):
-        for scores in scores_list:
-            if len(scores) > 0:
-                sampled_scores.append(np.random.choice(scores))
+        sampled = [np.random.choice(s) for s in scores_list if len(s) > 0]
+        sampled.append(np.inf)
+        w = np.ones(len(sampled)) / (K + 1)
+        quantiles.append(weighted_quantile(sampled, w, alpha))
 
-    # Add infinity
-    sampled_scores.append(np.inf)
-
-    # Weights
-    n_samples = K * number_repetitions
-    weights = np.array([1.0 / (number_repetitions * (K + 1))] * n_samples +
-                      [1.0 / (K + 1)])
-
-    return weighted_quantile(sampled_scores, weights, alpha)
+    return float(np.mean(quantiles))

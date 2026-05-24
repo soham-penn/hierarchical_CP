@@ -1,0 +1,46 @@
+STRATUM_RANK,STRATUM_INTERPRETATION,stratum,STRATUM_SHARE_BAPLUS_INTERVAL,STRATUM_SHARE_BAPLUS_MIN,STRATUM_SHARE_BAPLUS_MAX,STRATIFICATION_VARIABLE,EDUCATION_CATEGORY_USED,EDUCATION_CATEGORIES_AVAILABLE,EDUCATION_CODEBOOK,STRATIFICATION_METHOD,STRATIFICATION_DESCRIPTION,n_pumas,EQUAL_SIZE_EXPLANATION,median_income_individual_level,median_income_puma_median,BA_PLUS_SHARE_MEDIAN_IN_STRATUM
+1,Q1 (lowest BA+ share: least educated PUMAs),"(0.0445, 0.496]","(0.0445, 0.496]",0.045454545454545456,0.4782608695652174,share_baplus (computed as proportion of individuals with BA+ degree within each PUMA),BAplus (ACS educ code >= 21; Bachelor's degree or higher),<HS | HS | SomeCollege | BAplus,ACS SCHL education codes recoded into 4 categories: <HS (educ code <=15)  |  HS (educ 16-17)  |  SomeCollege (educ 18-20)  |  BAplus (educ >=21),"Quantile binning via pandas pd.qcut(share_baplus, q=n_strata, duplicates='drop')","STRATIFICATION PROCESS (step-by-step):
+1. Education variable: educ_level (4 categories: <HS, HS, SomeCollege, BAplus)
+2. Stratification target: BA+ share (proportion) within each PUMA
+3. Compute share_baplus for each PUMA: (# individuals with educ_level==BAplus) / (# total individuals in PUMA)
+4. Sort eligible PUMAs (n>=20 individuals) by share_baplus value
+5. Use pandas pd.qcut(share_baplus, q=5, duplicates='drop') to bin PUMAs into 5 equal-sized quantile strata
+6. Each stratum is one interval of share_baplus; equal-sized bins means 45 PUMAs / 5 strata = 9 per stratum
+7. Lower quantile = lower proportion of BA+ (less educated PUMAs)
+8. Higher quantile = higher proportion of BA+ (more educated PUMAs)",9,pd.qcut targets equal counts: 45 eligible PUMAs / 5 strata = 9.0 per stratum. Each stratum has 9 PUMAs.,30000.0,30000.0,0.2962962962962963
+2,Q2,"(0.496, 0.642]","(0.496, 0.642]",0.5,0.6363636363636364,share_baplus (computed as proportion of individuals with BA+ degree within each PUMA),BAplus (ACS educ code >= 21; Bachelor's degree or higher),<HS | HS | SomeCollege | BAplus,ACS SCHL education codes recoded into 4 categories: <HS (educ code <=15)  |  HS (educ 16-17)  |  SomeCollege (educ 18-20)  |  BAplus (educ >=21),"Quantile binning via pandas pd.qcut(share_baplus, q=n_strata, duplicates='drop')","STRATIFICATION PROCESS (step-by-step):
+1. Education variable: educ_level (4 categories: <HS, HS, SomeCollege, BAplus)
+2. Stratification target: BA+ share (proportion) within each PUMA
+3. Compute share_baplus for each PUMA: (# individuals with educ_level==BAplus) / (# total individuals in PUMA)
+4. Sort eligible PUMAs (n>=20 individuals) by share_baplus value
+5. Use pandas pd.qcut(share_baplus, q=5, duplicates='drop') to bin PUMAs into 5 equal-sized quantile strata
+6. Each stratum is one interval of share_baplus; equal-sized bins means 45 PUMAs / 5 strata = 9 per stratum
+7. Lower quantile = lower proportion of BA+ (less educated PUMAs)
+8. Higher quantile = higher proportion of BA+ (more educated PUMAs)",9,pd.qcut targets equal counts: 45 eligible PUMAs / 5 strata = 9.0 per stratum. Each stratum has 9 PUMAs.,40000.0,40000.0,0.53125
+3,Q3,"(0.642, 0.842]","(0.642, 0.842]",0.6451612903225806,0.8378378378378378,share_baplus (computed as proportion of individuals with BA+ degree within each PUMA),BAplus (ACS educ code >= 21; Bachelor's degree or higher),<HS | HS | SomeCollege | BAplus,ACS SCHL education codes recoded into 4 categories: <HS (educ code <=15)  |  HS (educ 16-17)  |  SomeCollege (educ 18-20)  |  BAplus (educ >=21),"Quantile binning via pandas pd.qcut(share_baplus, q=n_strata, duplicates='drop')","STRATIFICATION PROCESS (step-by-step):
+1. Education variable: educ_level (4 categories: <HS, HS, SomeCollege, BAplus)
+2. Stratification target: BA+ share (proportion) within each PUMA
+3. Compute share_baplus for each PUMA: (# individuals with educ_level==BAplus) / (# total individuals in PUMA)
+4. Sort eligible PUMAs (n>=20 individuals) by share_baplus value
+5. Use pandas pd.qcut(share_baplus, q=5, duplicates='drop') to bin PUMAs into 5 equal-sized quantile strata
+6. Each stratum is one interval of share_baplus; equal-sized bins means 45 PUMAs / 5 strata = 9 per stratum
+7. Lower quantile = lower proportion of BA+ (less educated PUMAs)
+8. Higher quantile = higher proportion of BA+ (more educated PUMAs)",9,pd.qcut targets equal counts: 45 eligible PUMAs / 5 strata = 9.0 per stratum. Each stratum has 9 PUMAs.,65000.0,62000.0,0.7307692307692307
+4,Q4,"(0.842, 0.911]","(0.842, 0.911]",0.8484848484848485,0.9090909090909091,share_baplus (computed as proportion of individuals with BA+ degree within each PUMA),BAplus (ACS educ code >= 21; Bachelor's degree or higher),<HS | HS | SomeCollege | BAplus,ACS SCHL education codes recoded into 4 categories: <HS (educ code <=15)  |  HS (educ 16-17)  |  SomeCollege (educ 18-20)  |  BAplus (educ >=21),"Quantile binning via pandas pd.qcut(share_baplus, q=n_strata, duplicates='drop')","STRATIFICATION PROCESS (step-by-step):
+1. Education variable: educ_level (4 categories: <HS, HS, SomeCollege, BAplus)
+2. Stratification target: BA+ share (proportion) within each PUMA
+3. Compute share_baplus for each PUMA: (# individuals with educ_level==BAplus) / (# total individuals in PUMA)
+4. Sort eligible PUMAs (n>=20 individuals) by share_baplus value
+5. Use pandas pd.qcut(share_baplus, q=5, duplicates='drop') to bin PUMAs into 5 equal-sized quantile strata
+6. Each stratum is one interval of share_baplus; equal-sized bins means 45 PUMAs / 5 strata = 9 per stratum
+7. Lower quantile = lower proportion of BA+ (less educated PUMAs)
+8. Higher quantile = higher proportion of BA+ (more educated PUMAs)",9,pd.qcut targets equal counts: 45 eligible PUMAs / 5 strata = 9.0 per stratum. Each stratum has 9 PUMAs.,85000.0,84500.0,0.8615384615384616
+5,Q5 (highest BA+ share: most educated PUMAs),"(0.911, 1.0]","(0.911, 1.0]",0.9206349206349206,1.0,share_baplus (computed as proportion of individuals with BA+ degree within each PUMA),BAplus (ACS educ code >= 21; Bachelor's degree or higher),<HS | HS | SomeCollege | BAplus,ACS SCHL education codes recoded into 4 categories: <HS (educ code <=15)  |  HS (educ 16-17)  |  SomeCollege (educ 18-20)  |  BAplus (educ >=21),"Quantile binning via pandas pd.qcut(share_baplus, q=n_strata, duplicates='drop')","STRATIFICATION PROCESS (step-by-step):
+1. Education variable: educ_level (4 categories: <HS, HS, SomeCollege, BAplus)
+2. Stratification target: BA+ share (proportion) within each PUMA
+3. Compute share_baplus for each PUMA: (# individuals with educ_level==BAplus) / (# total individuals in PUMA)
+4. Sort eligible PUMAs (n>=20 individuals) by share_baplus value
+5. Use pandas pd.qcut(share_baplus, q=5, duplicates='drop') to bin PUMAs into 5 equal-sized quantile strata
+6. Each stratum is one interval of share_baplus; equal-sized bins means 45 PUMAs / 5 strata = 9 per stratum
+7. Lower quantile = lower proportion of BA+ (less educated PUMAs)
+8. Higher quantile = higher proportion of BA+ (more educated PUMAs)",9,pd.qcut targets equal counts: 45 eligible PUMAs / 5 strata = 9.0 per stratum. Each stratum has 9 PUMAs.,106000.0,101000.0,0.9459459459459459

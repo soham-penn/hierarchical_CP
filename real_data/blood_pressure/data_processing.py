@@ -52,40 +52,44 @@ def load_and_clean_bp_data(
     # - diabetes: diabetes indicator
     # ... other covariates ...
 
-    # Standardize column names (adjust based on your data)
+    # Standardize column names via case-insensitive direct lookup.
+    # Each field is mapped independently — no elif chain that swallows columns.
+    lower_to_orig = {c.lower(): c for c in df.columns}
     col_rename = {}
-    followup_assigned = False  # Track if we already assigned followup_sbp
 
-    for col in df.columns:
-        lower_col = col.lower()
-        # Clinic/Site ID
-        if 'site' in lower_col and 'number' in lower_col:
-            col_rename[col] = 'clinic_id'
-        elif 'clinic' in lower_col or 'center' in lower_col:
-            col_rename[col] = 'clinic_id'
-        # Treatment
-        elif 'treatment' in lower_col or 'arm' in lower_col or ('tx' in lower_col and 'ctrl' in lower_col):
-            col_rename[col] = 'treatment'
-        # Baseline SBP
-        elif 'sbp' in lower_col and 'baseline' in lower_col:
-            col_rename[col] = 'baseline_sbp'
-        # Follow-up SBP - prioritize 12 months over 6 months, only assign once
-        elif not followup_assigned:
-            if 'sbp' in lower_col and '12' in lower_col and 'month' in lower_col:
-                col_rename[col] = 'followup_sbp'
-                followup_assigned = True
-            elif 'sbp' in lower_col and '6' in lower_col and 'month' in lower_col:
-                col_rename[col] = 'followup_sbp'
-                followup_assigned = True
-        # Age
-        elif col.lower() == 'age':
-            col_rename[col] = 'age'
-        # Gender
-        elif col.lower() in ['sex', 'gender']:
-            col_rename[col] = 'sex'
-        # BMI
-        elif col.lower() == 'bmi':
-            col_rename[col] = 'bmi'
+    # Clinic/Site ID
+    for key in ['site number', 'clinic_id', 'clinic', 'center', 'site']:
+        if key in lower_to_orig:
+            col_rename[lower_to_orig[key]] = 'clinic_id'
+            break
+
+    # Treatment arm
+    for key in ['treatment', 'arm']:
+        if key in lower_to_orig:
+            col_rename[lower_to_orig[key]] = 'treatment'
+            break
+
+    # Baseline SBP
+    for key in ['sbp baseline', 'baseline_sbp', 'baseline sbp']:
+        if key in lower_to_orig:
+            col_rename[lower_to_orig[key]] = 'baseline_sbp'
+            break
+
+    # Follow-up SBP: prefer 12-month, fall back to 6-month
+    for key in ['sbp 12 months', 'sbp_12months', 'sbp 6 months', 'sbp_6months']:
+        if key in lower_to_orig:
+            col_rename[lower_to_orig[key]] = 'followup_sbp'
+            break
+
+    # Demographics — mapped independently, not inside an elif chain
+    if 'age' in lower_to_orig:
+        col_rename[lower_to_orig['age']] = 'age'
+    if 'gender' in lower_to_orig:
+        col_rename[lower_to_orig['gender']] = 'sex'
+    elif 'sex' in lower_to_orig:
+        col_rename[lower_to_orig['sex']] = 'sex'
+    if 'bmi' in lower_to_orig:
+        col_rename[lower_to_orig['bmi']] = 'bmi'
 
     if col_rename:
         df = df.rename(columns=col_rename)
@@ -124,6 +128,10 @@ def load_and_clean_bp_data(
     valid_clinics = clinic_counts[clinic_counts >= min_clinic_size].index
     df = df[df['clinic_id'].isin(valid_clinics)]
     print(f"After filtering clinics (min size {min_clinic_size}): {len(df)} rows across {len(valid_clinics)} clinics")
+
+    # CRITICAL: Reset index to ensure df.index matches X array positions
+    # (After dropna and filtering, df.index may have gaps, but X is built from .values with 0-based indexing)
+    df = df.reset_index(drop=True)
 
     # Create derived features if needed
     if 'age' in df.columns:

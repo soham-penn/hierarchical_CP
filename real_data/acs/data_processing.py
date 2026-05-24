@@ -46,13 +46,16 @@ FIPS_TO_STATE = {
 def load_and_clean_acs_pums(
     pums_csv_path: str,
     states_keep: List[str] = None,
-    age_min: int = 25,
-    age_max: int = 54,
+    age_min: Optional[int] = 25,
+    age_max: Optional[int] = 54,
     yoep_window_years: int = 2,
+    yoep_min_year: Optional[int] = None,
     min_hours: int = 20,
     require_work_last_year: bool = True,
     drop_nonpositive_income: bool = True,
+    min_income: float = None,
     top_income_quantile: float = None,
+    bottom_income_quantile: float = None,
     y_transform = np.log1p
 ) -> pd.DataFrame:
     """
@@ -64,20 +67,26 @@ def load_and_clean_acs_pums(
         Path to ACS PUMS CSV file
     states_keep : List[str]
         States to keep (default: None = all states)
-    age_min : int
-        Minimum age (default: 25)
-    age_max : int
-        Maximum age (default: 54)
+    age_min : int | None
+        Minimum age (default: 25). Set to None to disable lower age bound.
+    age_max : int | None
+        Maximum age (default: 54). Set to None to disable upper age bound.
     yoep_window_years : int
         Window for recent year of entry (default: 2 years)
+    yoep_min_year : int | None
+        If specified, use fixed filter YOEP >= yoep_min_year instead of a rolling window.
     min_hours : int
         Minimum usual hours worked (default: 20)
     require_work_last_year : bool
         Require work last year (default: True)
     drop_nonpositive_income : bool
         Drop non-positive incomes (default: True)
+    min_income : float
+        If specified, keep only income >= min_income.
     top_income_quantile : float
         If specified, keep only top X quantile by income (e.g., 0.90 for top 10%)
+    bottom_income_quantile : float
+        If specified, keep only bottom X quantile by income (e.g., 0.25 for bottom 25%)
     y_transform : callable
         Transform for income (default: log1p)
 
@@ -89,7 +98,8 @@ def load_and_clean_acs_pums(
     # To filter to emerging states only, pass states_keep=EMERGING_STATES explicitly
 
     # Column mapping (adjust based on your ACS PUMS file)
-    col_map = {
+    # PUMA is optional but retained when present so experiments can group by PUMA.
+    required_col_map = {
         'ST': 'state_fips',
         'AGEP': 'age',
         'NATIVITY': 'nativity',
@@ -102,16 +112,38 @@ def load_and_clean_acs_pums(
         'ENG': 'english',
         'COW': 'cow'
     }
+    optional_col_map = {
+        'PUMA': 'puma'
+    }
 
-    # Try to load only needed columns
+    # Try to load required columns + any optional columns that exist.
     try:
-        df = pd.read_csv(pums_csv_path, usecols=list(col_map.keys()))
-        df = df.rename(columns=col_map)
-    except:
-        # If specific columns fail, load all and rename
+        load_cols = list(required_col_map.keys()) + list(optional_col_map.keys())
+        df = pd.read_csv(pums_csv_path, usecols=lambda c: c in load_cols)
+        rename_map = {**required_col_map, **optional_col_map}
+        df = df.rename(columns=rename_map)
+
+        missing_required = [
+            v for v in required_col_map.values() if v not in df.columns
+        ]
+        if missing_required:
+            raise ValueError(f"Missing required ACS columns: {missing_required}")
+    except Exception:
+        # If selective loading fails, load all and keep required + available optional.
         df = pd.read_csv(pums_csv_path)
-        df = df.rename(columns=col_map)
-        df = df[list(col_map.values())]
+        rename_map = {**required_col_map, **optional_col_map}
+        df = df.rename(columns=rename_map)
+
+        missing_required = [
+            v for v in required_col_map.values() if v not in df.columns
+        ]
+        if missing_required:
+            raise ValueError(f"Missing required ACS columns: {missing_required}")
+
+        keep_cols = list(required_col_map.values()) + [
+            v for v in optional_col_map.values() if v in df.columns
+        ]
+        df = df[keep_cols]
 
     print(f"Loaded {len(df)} rows from {pums_csv_path}")
 
@@ -129,13 +161,21 @@ def load_and_clean_acs_pums(
     df = df[df['nativity'] == 2]
     print(f"After filtering to foreign-born: {len(df)} rows")
 
-    # Working-age
-    df = df[(df['age'] >= age_min) & (df['age'] <= age_max)]
-    print(f"After age filter [{age_min}, {age_max}]: {len(df)} rows")
+    # Optional working-age filter
+    if age_min is None and age_max is None:
+        print(f"Age filter disabled: {len(df)} rows")
+    else:
+        lower = -np.inf if age_min is None else age_min
+        upper = np.inf if age_max is None else age_max
+        df = df[(df['age'] >= lower) & (df['age'] <= upper)]
+        print(f"After age filter [{age_min}, {age_max}]: {len(df)} rows")
 
     # Recent year of entry
     yoep_max = df['yoep'].max()
-    yoep_cutoff = yoep_max - (yoep_window_years - 1)
+    if yoep_min_year is None:
+        yoep_cutoff = yoep_max - (yoep_window_years - 1)
+    else:
+        yoep_cutoff = yoep_min_year
     df = df[df['yoep'] >= yoep_cutoff]
     print(f"After recent entry filter (YOEP >= {yoep_cutoff}): {len(df)} rows")
 
@@ -148,6 +188,10 @@ def load_and_clean_acs_pums(
         df = df[df['income'] > 0]
         print(f"After dropping non-positive income: {len(df)} rows")
 
+    if min_income is not None:
+        df = df[df['income'] >= min_income]
+        print(f"After min income filter (income >= {min_income}): {len(df)} rows")
+
     # Top income quantile filter (applied per state)
     if top_income_quantile is not None:
         filtered_dfs = []
@@ -158,6 +202,17 @@ def load_and_clean_acs_pums(
             filtered_dfs.append(state_filtered)
         df = pd.concat(filtered_dfs, ignore_index=True)
         print(f"After top {int((1-top_income_quantile)*100)}% income filter (per state): {len(df)} rows across {df['state_abb'].nunique()} states")
+
+    # Bottom income quantile filter (applied per state)
+    if bottom_income_quantile is not None:
+        filtered_dfs = []
+        for state in df['state_abb'].unique():
+            state_df = df[df['state_abb'] == state]
+            state_threshold = state_df['income'].quantile(bottom_income_quantile)
+            state_filtered = state_df[state_df['income'] <= state_threshold]
+            filtered_dfs.append(state_filtered)
+        df = pd.concat(filtered_dfs, ignore_index=True)
+        print(f"After bottom {int(bottom_income_quantile*100)}% income filter (per state): {len(df)} rows across {df['state_abb'].nunique()} states")
 
     # Derived features
     df['entry_recency'] = yoep_max - df['yoep']

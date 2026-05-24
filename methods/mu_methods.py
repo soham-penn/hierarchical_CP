@@ -1,8 +1,39 @@
 """
-Mu-Estimation Method Objects (Random Forest + Offset + OLS)
+Mu-Estimation Method Objects (Random Forest + OLS)
 
-This module defines methods for estimating the conditional mean function μ(X, U)
-using Random Forest models or OLS with group-specific offsets.
+Global RF / OLS model
+---------------------
+Fit once on all training groups (complement of S); produces
+  mu_global(x, u) = model.predict([x, u])
+
+Group-level shrinkage
+---------------------
+For each group j we observe the first tau observations Z_j[0..tau-1] as a
+within-group training history.  The within-group mean is
+
+  mu_bar_j = mean(Y_j[0], ..., Y_j[tau-1])     (first tau obs only)
+
+The shrinkage prediction for observation (x, u) in group j is
+
+  mu_hat(x, u | group j) = w_g * mu_global(x, u)  +  (1 - w_g) * mu_bar_j
+
+where
+
+  w_g = |S_comp|^c / (|S_comp|^c + tau)
+
+and
+  tau      : number of within-group training obs (also controls shrinkage strength)
+  c        : exponent; default 0.5 (sqrt rule)
+  |S_comp| : number of groups used to fit the global model
+
+When tau = 0 → pure global (no within-group history used).
+When |S_comp| → ∞ → pure global (many groups → trust global more).
+
+Performance note
+----------------
+All inner-loop score computations should use the batched `predict_global_batch`
+and `predict_shrunk_batch` functions, which call model.predict once per group
+rather than once per observation.  This gives 10-100x speedup for RF models.
 """
 
 import numpy as np
@@ -10,248 +41,277 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
 
-def create_mu_method_random_forest_offset(ntree=50, mtry=None, nodesize=5, random_state=123):
-    """
-    Create a mu-estimation method using Random Forest with group-specific offsets.
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
-    Fits a global RF model on (X, U) then estimates group offsets as mean residuals
-    on specified within-group training indices.
+def _stack_features(U_group, Z_group):
+    """Build feature matrix [X | repeated U] for a group."""
+    X_mat = np.asarray([z["X"] for z in Z_group], dtype=float)
+    U_rep = np.repeat(
+        np.asarray(U_group, dtype=float).reshape(1, -1),
+        X_mat.shape[0], axis=0
+    )
+    return np.hstack([X_mat, U_rep])
+
+
+def compute_group_mean(Z_group, tau):
+    """
+    Compute within-group mean Y using the first `tau` observations.
+
+    Parameters
+    ----------
+    Z_group : list of {'X': ..., 'Y': ...}
+    tau : int
+        Number of leading observations to average.  If tau <= 0 or the group
+        has fewer than tau observations, returns 0.0.
+
+    Returns
+    -------
+    float
+    """
+    if tau <= 0 or len(Z_group) < tau:
+        return 0.0
+    return float(np.mean([Z_group[i]["Y"] for i in range(tau)]))
+
+
+def global_weight(N_comp_groups, tau, c):
+    """
+    Global weight w_g = N_comp^c / (N_comp^c + tau).
+
+    tau = 0  → w_g = 1 (pure global, no within-group history).
+    N_comp = 0 → w_g = 0 (no global model; fall back to group mean).
+    """
+    if tau <= 0:
+        return 1.0
+    if N_comp_groups <= 0:
+        return 0.0
+    numer = float(N_comp_groups) ** c
+    return numer / (numer + float(tau))
+
+
+# ---------------------------------------------------------------------------
+# Model-agnostic batch prediction helpers
+# ---------------------------------------------------------------------------
+
+def _predict_batch(model, X_mat, u_vector):
+    """
+    Batch prediction for n observations in one group.
+
+    Parameters
+    ----------
+    model    : fitted sklearn model  (or None → returns zeros)
+    X_mat    : ndarray (n, p_X)
+    u_vector : ndarray (d,)  — shared group covariate
+
+    Returns
+    -------
+    ndarray (n,)
+    """
+    if model is None:
+        return np.zeros(len(X_mat))
+    X_mat = np.asarray(X_mat, dtype=float)
+    u = np.asarray(u_vector, dtype=float).ravel()
+    U_rep = np.repeat(u.reshape(1, -1), len(X_mat), axis=0)
+    return model.predict(np.hstack([X_mat, U_rep]))
+
+
+def _predict_shrunk_batch(model, X_mat, u_vector, group_mean, N_comp_groups, tau, c):
+    """
+    Shrinkage prediction for a batch.
+
+      mu_shrunk_i = w_g * mu_global(x_i, u) + (1-w_g) * group_mean
+
+    Returns ndarray (n,).
+    """
+    mu_g = _predict_batch(model, X_mat, u_vector)
+    if tau <= 0:
+        return mu_g
+    w_g = global_weight(N_comp_groups, tau, c)
+    return w_g * mu_g + (1.0 - w_g) * float(group_mean)
+
+
+# ---------------------------------------------------------------------------
+# Common factory builder
+# ---------------------------------------------------------------------------
+
+def _make_method(fit_fn, tau, c):
+    """
+    Build the method dict given a fit function and shrinkage params.
+    All predict functions are built here for both RF and OLS.
+    """
+
+    def predict_global(model_global, x_vector, u_vector):
+        """Single-obs prediction (no shrinkage)."""
+        if model_global is None:
+            return 0.0
+        x = np.asarray(x_vector, dtype=float).ravel()
+        u = np.asarray(u_vector, dtype=float).ravel()
+        return float(model_global.predict(
+            np.concatenate([x, u]).reshape(1, -1))[0])
+
+    def predict_global_batch(model_global, X_mat, u_vector):
+        """Batched global prediction — one model.predict call for the whole group."""
+        return _predict_batch(model_global, X_mat, u_vector)
+
+    def predict_shrunk(model_global, x_vector, u_vector, group_mean, N_comp_groups):
+        """Single-obs shrinkage prediction."""
+        mu_g = predict_global(model_global, x_vector, u_vector)
+        if tau <= 0:
+            return mu_g
+        w_g = global_weight(N_comp_groups, tau, c)
+        return w_g * mu_g + (1.0 - w_g) * float(group_mean)
+
+    def predict_shrunk_batch(model_global, X_mat, u_vector, group_mean, N_comp_groups):
+        """Batched shrinkage prediction — use this in inner loops for speed."""
+        return _predict_shrunk_batch(
+            model_global, X_mat, u_vector, group_mean, N_comp_groups, tau, c)
+
+    def _compute_group_mean(Z_group):
+        return compute_group_mean(Z_group, tau)
+
+    def fit_group_adjustment(model_global, u_group_vector,
+                              Z_group_list, training_index_vector):
+        return 0.0
+
+    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
+        return predict_global(model_global, x_vector, u_group_vector)
+
+    return {
+        "fit_global": fit_fn,
+        "predict_global": predict_global,
+        "predict_global_batch": predict_global_batch,
+        "predict_shrunk": predict_shrunk,
+        "predict_shrunk_batch": predict_shrunk_batch,
+        "compute_group_mean": _compute_group_mean,
+        "global_weight": lambda N_comp: global_weight(N_comp, tau, c),
+        "tau": tau,
+        "c": c,
+        # Legacy
+        "fit_group_adjustment": fit_group_adjustment,
+        "predict_group_mu": predict_group_mu,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Random Forest method factory
+# ---------------------------------------------------------------------------
+
+def create_mu_method_random_forest(ntree=50, mtry=None, nodesize=5,
+                                    random_state=123, tau=0, c=0.5):
+    """
+    Create a mu-estimation method using a global Random Forest with optional
+    within-group shrinkage.
 
     Parameters
     ----------
     ntree : int
-        Number of trees.
-    mtry : int or None
-        Number of features considered at each split (if None uses sqrt(p_total)).
+    mtry  : int or None  (None → sqrt(p_total))
     nodesize : int
-        Minimum samples per leaf.
     random_state : int
-        Seed for reproducibility.
-
-    Returns
-    -------
-    dict
-        Method object with fit/predict functions.
+    tau : int
+        Number of within-group history observations to use for group mean
+        shrinkage.  tau=0 disables shrinkage (pure global RF).
+    c : float
+        Exponent in w_g = N_comp^c / (N_comp^c + tau).
     """
 
-    def _stack_group_features(U_group, Z_group):
-        """
-        Build feature matrix for one group: [X | repeated U].
-        """
-        X_mat = np.asarray([z["X"] for z in Z_group], dtype=float)
-        U_rep = np.repeat(np.asarray(U_group, dtype=float).reshape(1, -1), X_mat.shape[0], axis=0)
-        return np.hstack([X_mat, U_rep])
-
     def fit_global(U_matrix, Z_list, group_index_vector):
-        """
-        Fit global Random Forest on pooled data from selected groups (0-indexed).
-        """
         if len(group_index_vector) == 0:
             return None
 
-        # infer dimensions
         first_g = group_index_vector[0]
         p_X = len(Z_list[first_g][0]["X"])
         d_U = int(np.asarray(U_matrix).shape[1])
-        p_total = p_X + d_U
+        local_mtry = mtry if mtry is not None else max(1, int(np.sqrt(p_X + d_U)))
 
-        local_mtry = mtry
-        if local_mtry is None:
-            local_mtry = max(1, int(np.sqrt(p_total)))
-
-        X_blocks = []
-        y_blocks = []
-
+        X_blocks, y_blocks = [], []
         for g in group_index_vector:
-            U_g = U_matrix[g, :]
-            Z_g = Z_list[g]
-            if len(Z_g) == 0:
+            Zg = Z_list[g]
+            if len(Zg) == 0:
                 continue
+            X_blocks.append(_stack_features(U_matrix[g, :], Zg))
+            y_blocks.append(np.array([z["Y"] for z in Zg], dtype=float))
 
-            Xg = _stack_group_features(U_g, Z_g)
-            yg = np.asarray([z["Y"] for z in Z_g], dtype=float)
-
-            X_blocks.append(Xg)
-            y_blocks.append(yg)
-
-        if len(X_blocks) == 0:
+        if not X_blocks:
             return None
-
-        X_train = np.vstack(X_blocks)
-        y_train = np.concatenate(y_blocks)
 
         rf = RandomForestRegressor(
             n_estimators=ntree,
             max_features=local_mtry,
             min_samples_leaf=nodesize,
             random_state=random_state,
-            n_jobs=-1,  # parallelize within RF (optional; remove if you prefer)
+            n_jobs=1,          # single-threaded; avoids macOS fork overhead
         )
-        rf.fit(X_train, y_train)
+        rf.fit(np.vstack(X_blocks), np.concatenate(y_blocks))
+        # record number of groups used to fit the global model
+        try:
+            rf._n_comp_groups = len(group_index_vector)
+        except Exception:
+            rf._n_comp_groups = 0
         return rf
 
-    def predict_global(model_global, x_vector, u_vector):
-        """
-        Predict using the global model on a single (x,u).
-        """
-        if model_global is None:
-            return 0.0
-
-        x = np.asarray(x_vector, dtype=float).ravel()
-        u = np.asarray(u_vector, dtype=float).ravel()
-        feats = np.concatenate([x, u]).reshape(1, -1)
-        return float(model_global.predict(feats)[0])
-
-    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
-        """
-        Fit group-specific offset = mean(Y - mu_global) over training indices (0-indexed).
-        """
-        if len(training_index_vector) == 0:
-            return 0.0
-
-        idx = list(training_index_vector)
-        y_train = np.asarray([Z_group_list[i]["Y"] for i in idx], dtype=float)
-
-        # vectorized prediction on the selected indices
-        X_sel = np.asarray([Z_group_list[i]["X"] for i in idx], dtype=float)
-        u = np.asarray(u_group_vector, dtype=float).ravel()
-        U_rep = np.repeat(u.reshape(1, -1), X_sel.shape[0], axis=0)
-        feats = np.hstack([X_sel, U_rep])
-
-        mu_global = 0.0 if model_global is None else model_global.predict(feats)
-        mu_global = np.asarray(mu_global, dtype=float).ravel()
-
-        return float(np.mean(y_train - mu_global))
-
-    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
-        """
-        Predict using global model + group adjustment.
-        """
-        return predict_global(model_global, x_vector, u_group_vector) + float(group_adjustment)
-
-    return {
-        "fit_global": fit_global,
-        "predict_global": predict_global,
-        "fit_group_adjustment": fit_group_adjustment,
-        "predict_group_mu": predict_group_mu,
-    }
+    return _make_method(fit_global, tau, c)
 
 
-def create_mu_method_random_forest_global_only(ntree=50, mtry=None, nodesize=5, random_state=123):
-    """
-    Create a mu-estimation method using only a global Random Forest (no group offsets).
-    """
-    base = create_mu_method_random_forest_offset(
-        ntree=ntree, mtry=mtry, nodesize=nodesize, random_state=random_state
+# ---------------------------------------------------------------------------
+# Convenience constructors
+# ---------------------------------------------------------------------------
+
+def create_mu_method_random_forest_offset(ntree=50, mtry=None, nodesize=5,
+                                           random_state=123, tau=0, c=0.5):
+    """RF with optional within-group shrinkage (tau controls history depth)."""
+    return create_mu_method_random_forest(
+        ntree=ntree, mtry=mtry, nodesize=nodesize,
+        random_state=random_state, tau=tau, c=c
     )
 
-    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
-        return 0.0
 
-    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
-        return base["predict_global"](model_global, x_vector, u_group_vector)
+def create_mu_method_random_forest_global_only(ntree=50, mtry=None, nodesize=5,
+                                                random_state=123):
+    """RF, pure global (no within-group shrinkage; tau=0)."""
+    return create_mu_method_random_forest(
+        ntree=ntree, mtry=mtry, nodesize=nodesize,
+        random_state=random_state, tau=0, c=0.5
+    )
 
-    base["fit_group_adjustment"] = fit_group_adjustment
-    base["predict_group_mu"] = predict_group_mu
-    return base
 
+# ---------------------------------------------------------------------------
+# OLS methods (real-data bootstrap)
+# ---------------------------------------------------------------------------
 
-def create_mu_method_ols_offset():
-    """
-    Create a mu-estimation method using OLS with group-specific offsets.
-    Uses NumPy arrays (no pandas).
-    """
-
-    def _stack_group_features(U_group, Z_group):
-        X_mat = np.asarray([z["X"] for z in Z_group], dtype=float)
-        U_rep = np.repeat(np.asarray(U_group, dtype=float).reshape(1, -1), X_mat.shape[0], axis=0)
-        return np.hstack([X_mat, U_rep])
+def create_mu_method_ols(tau=0, c=0.5):
+    """OLS with optional within-group shrinkage."""
 
     def fit_global(U_matrix, Z_list, group_index_vector):
-        """
-        Fit a global OLS model using data from specified groups (0-indexed).
-        """
         if len(group_index_vector) == 0:
             return None
-
-        X_blocks = []
-        y_blocks = []
-
+        X_blocks, y_blocks = [], []
         for g in group_index_vector:
-            U_g = U_matrix[g, :]
-            Z_g = Z_list[g]
-            if len(Z_g) == 0:
+            Zg = Z_list[g]
+            if len(Zg) == 0:
                 continue
-
-            Xg = _stack_group_features(U_g, Z_g)
-            yg = np.asarray([z["Y"] for z in Z_g], dtype=float)
-
-            X_blocks.append(Xg)
-            y_blocks.append(yg)
-
-        if len(X_blocks) == 0:
+            X_blocks.append(_stack_features(U_matrix[g, :], Zg))
+            y_blocks.append(np.array([z["Y"] for z in Zg], dtype=float))
+        if not X_blocks:
             return None
-
-        X_train = np.vstack(X_blocks)
-        y_train = np.concatenate(y_blocks)
-
         ols = LinearRegression(fit_intercept=True)
-        ols.fit(X_train, y_train)
+        ols.fit(np.vstack(X_blocks), np.concatenate(y_blocks))
+        # record number of groups used to fit the global model
+        try:
+            ols._n_comp_groups = len(group_index_vector)
+        except Exception:
+            ols._n_comp_groups = 0
         return ols
 
-    def predict_global(model_global, x_vector, u_vector):
-        """
-        Predict using the global OLS model.
-        """
-        if model_global is None:
-            return 0.0
+    return _make_method(fit_global, tau, c)
 
-        x = np.asarray(x_vector, dtype=float).ravel()
-        u = np.asarray(u_vector, dtype=float).ravel()
-        feats = np.concatenate([x, u]).reshape(1, -1)
-        return float(model_global.predict(feats)[0])
 
-    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
-        """
-        Fit group-specific adjustment = mean(Y - mu_global) over training indices (0-indexed).
-        """
-        if model_global is None or len(training_index_vector) == 0:
-            return 0.0
-
-        idx = list(training_index_vector)
-        y_train = np.asarray([Z_group_list[i]["Y"] for i in idx], dtype=float)
-
-        X_sel = np.asarray([Z_group_list[i]["X"] for i in idx], dtype=float)
-        u = np.asarray(u_group_vector, dtype=float).ravel()
-        U_rep = np.repeat(u.reshape(1, -1), X_sel.shape[0], axis=0)
-        feats = np.hstack([X_sel, U_rep])
-
-        mu_global = np.asarray(model_global.predict(feats), dtype=float).ravel()
-        return float(np.mean(y_train - mu_global))  # (fix #7) ensure Python float
-
-    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
-        return predict_global(model_global, x_vector, u_group_vector) + float(group_adjustment)
-
-    return {
-        "fit_global": fit_global,
-        "predict_global": predict_global,
-        "fit_group_adjustment": fit_group_adjustment,
-        "predict_group_mu": predict_group_mu,
-    }
+def create_mu_method_ols_offset(tau=0, c=0.5):
+    """OLS with within-group shrinkage."""
+    return create_mu_method_ols(tau=tau, c=c)
 
 
 def create_mu_method_ols_global_only():
-    """
-    Create a mu-estimation method using OLS without group-specific adjustments.
-    """
-    base = create_mu_method_ols_offset()
-
-    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
-        return 0.0
-
-    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
-        return base["predict_global"](model_global, x_vector, u_group_vector)
-
-    base["fit_group_adjustment"] = fit_group_adjustment
-    base["predict_group_mu"] = predict_group_mu
-    return base
+    """OLS, pure global (tau=0)."""
+    return create_mu_method_ols(tau=0, c=0.5)

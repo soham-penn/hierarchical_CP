@@ -1,45 +1,14 @@
-# Data folders (large files)
-real_data/acs/data/
-real_data/blood_pressure/data/
-
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-
-# Virtual environments
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -50,5 +19,74 @@ share/python-wheels/
 .DS_Store
 Thumbs.db
 
-# Results (optional - uncomment if you want to exclude results)
-# real_data/*/results/
+# Large data files
+# ACS raw data (very large)
+real_data/acs/data/2018/
+real_data/acs/data/acs_data_all50states.csv
+real_data/acs_pums/
+
+# Large detailed result CSVs (>1MB)
+# Keep summary CSVs, exclude detailed raw results
+*_detailed.csv
+raw_results.csv
+*raw_results*.csv
+chunks/
+
+# Old experiment results
+*_OLD/
+*_OLD_WRONG_CONFIG/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+git_push.log
+
+# Workspace files
+*.code-workspace
+
+# Large result directories (keep summaries only)
+NEW_RESULTS/true_marg_*/
+NEW_RESULTS_2/fixedN21_*/
+
+# Large ACS raw data files
+real_data/acs/data/acs_data_all50states.csv
+real_data/acs/data/acs_data.csv
+real_data/acs/data/2018/1-Year/psam_p*.csv
+
+# Other large raw data formats
+*.zip
+*.parquet
+*.feather
+*.h5
+*.hdf5
+
+# Large ACS PUMS raw files
+real_data/acs_pums/data/**/psam_p*.csv
+real_data/acs_pums/data/**/*.zip
+real_data/acs_pums/data/**/*.dat
+real_data/acs_pums/data/**/*.parquet
+
+# Large ACS raw files
+real_data/acs/data/acs_data_all50states.csv
+real_data/acs/data/acs_data.csv
+real_data/acs/data/2018/1-Year/psam_p*.csv
+
+# Large raw ACS/PUMS data files
+real_data/acs_pums/data/**/psam_p*.csv
+real_data/acs_pums/data/**/*.zip
+real_data/acs_pums/data/**/*.dat
+real_data/acs_pums/data/**/*.parquet
+
+real_data/acs/data/acs_data_all50states.csv
+real_data/acs/data/acs_data.csv
+real_data/acs/data/2018/1-Year/psam_p*.csv
+
+# Generic large data formats
+*.zip
+*.parquet
+*.feather
+*.h5
+*.hdf5

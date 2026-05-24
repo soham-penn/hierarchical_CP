@@ -1,271 +1,361 @@
-# Real Data Analysis for Hierarchical Conformal Prediction
+# Real Data Experiments for Hierarchical Conformal Prediction
 
-This directory contains code for applying hierarchical conformal prediction methods to two real-world datasets:
+This directory contains bootstrap experiments for hierarchical conformal prediction methods on three datasets:
 
-1. **ACS (American Community Survey)**: Earnings prediction for recent immigrants across US states
-2. **Blood Pressure Trial**: Systolic blood pressure prediction across clinic groups
+1. Blood Pressure Trial: Systolic blood pressure prediction across clinic groups
+2. ACS State-Level: Income prediction across US states
+3. ACS PUMS: Income prediction for recent immigrants across PUMAs within a single state
 
 ## Directory Structure
 
 ```
 real_data/
-├── acs/
-│   ├── data/                        # Data files (created after download)
-│   ├── results/                     # Results organized by experiment type
-│   │   ├── sequential/              # Sequential (online) experiments
-│   │   └── marginal/                # Marginal coverage experiments
-│   ├── load_acs_data.py             # Download ACS PUMS data using folktables
-│   ├── data_processing.py           # Data loading, cleaning, and processing
-│   ├── run_acs_sequential.py        # Sequential experiment runner
-│   └── run_acs_marginal.py          # Marginal experiment runner
-│
 ├── blood_pressure/
-│   ├── data/                        # Data files (BP Excel files)
-│   ├── results/marginal/            # Marginal coverage experiments
-│   ├── load_bp_data.py              # Load and combine BP Excel files
-│   ├── data_processing.py           # Data loading, cleaning, and processing
-│   └── run_bp_marginal.py           # Marginal experiment runner
+│   ├── data/                        # BP data files
+│   ├── plots/                       # Bootstrap experiment plots
+│   ├── results/                     # Bootstrap experiment results (CSV)
+│   └── data_processing.py           # Data loading and cleaning
 │
+├── acs/
+│   ├── data/                        # ACS state-level data
+│   ├── plots/                       # Bootstrap experiment plots
+│   ├── results/                     # Bootstrap experiment results (CSV)
+│   └── data_processing.py           # Data loading and cleaning
+│
+├── acs_pums/
+│   ├── data/                        # ACS PUMS data (auto-downloaded)
+│   ├── plots/                       # Bootstrap experiment plots
+│   ├── results/                     # Bootstrap experiment results (CSV)
+│   ├── load_pums_data.py            # PUMS data loading and filtering
+│   ├── bootstrap_pums.py            # Bootstrap experiments (proportion + fixed-o)
+│   └── README.md                    # PUMS experiment documentation
+│
+├── repeated_experiments.py          # Repeated experiments for BP and ACS state-level
 └── README.md                        # This file
 ```
 
 ## Methods Evaluated
 
-All experiments compare 6 hierarchical conformal prediction methods:
+All experiments compare 8 hierarchical conformal prediction methods:
 
-### Proposed Methods
-1. **HCP++** (HCP.plus): Donor group selection with adaptive calibration
-2. **HCP.sample**: Sample-splitting method with test group data
+Proposed Methods:
+1. donor-HCP-randomized (D-HCP)
+2. donor-HCP-derandomized (DD-HCP)
+3. sample-HCP-randomized (S-HCP)
+4. sample-HCP-derandomized (D-Sample-HCP)
 
-### Baseline Methods
-3. **HCP**: Standard hierarchical CP (max quantile across groups)
-4. **Pooling**: Pool all calibration data (ignores group structure)
-5. **Subsampling**: Sample once from each group
-6. **Repeated**: Repeated subsampling with averaging
+Baseline Methods:
+5. HCP: Standard hierarchical CP (weighted empirical quantile + infinity atom)
+6. Pooling: Pool all calibration data (ignores group structure, no infinity)
+7. Subsampling: Sample once from each group + infinity
+8. Repeated: Repeated subsampling with averaging (50 repetitions)
 
----
-
-## Dataset 1: ACS (American Community Survey)
+## Experiment 1: Blood Pressure
 
 ### Overview
 
-**Goal**: Predict log-income for recent foreign-born immigrants across US states
+Goal: Predict systolic blood pressure at 12 months across clinic sites
+Data Source: Hypertension intervention trial (treatment arm)
+Groups: 32 clinics (17 non-test, 15 test)
+Outcome: Follow-up SBP at 12 months (mmHg)
+Covariates: Baseline SBP
 
-**Data Source**:
-- ACS PUMS 2018 (Public Use Microdata Sample)
-- Downloaded via `folktables` library
+### Bootstrap Design
 
-### Population & Filters
+For each of B=100 replicates:
+1. Sample with replacement from each of the 32 clinics (size = original clinic size)
+2. Randomly split 17 non-test clinics into training (8-9) and calibration (8-9)
+3. Fit model on training clinics, compute scores on calibration clinics
+4. Evaluate on all 15 test clinics at different history sizes o
 
-**Target Population:**
-- **Age**: 25-54 (working age)
-- **Nativity**: Foreign-born (NATIVITY == 2)
-- **Year of entry**: Recent immigrants (YOEP >= 2017)
-- **Labor force**: Hours worked >= 20
-- **Income filter**: Top 25% by income **per state** (ensures all states represented)
-
-**After filtering:**
-- 1,180 observations across 49 states (MT excluded due to insufficient data)
-- 24 emerging destination test states
-- 25 traditional destination training states
-
-### Outcome and Covariates
-
-**Outcome (Y)**: `log(income + 1)`
-- Range: [9.95, 13.86] (≈3.9 units)
-- Corresponds to income range: [$21K, $1.04M]
-- Per-state filtering ensures income distribution varies by state
-
-**Covariates (X)**: 19 features including age, education, hours worked, etc.
-
-### Experimental Setup
-
-#### Training/Calibration
-- **Training states**: 25 states (CA, TX, NY, NJ, IL, MA, VA, MI, CT, OH, etc.)
-  - Total: ~788 calibration observations across 25 states
-- **Split**: First half (13 states) fits μ-model, second half (12 states) computes conformity scores
-- **μ estimation**:
-  - **Baseline methods**: Use global μ estimate only (no within-group adjustment)
-  - **HCP++/HCP.sample**: Use global μ + within-group offset
-- **Key**: Test state data NEVER used in baseline calibration
-
-#### Marginal Coverage Calculation
-For each test state:
-1. **Order observations by income** (ascending)
-2. For percentiles p ∈ {0, 25, 50, 75}:
-   - **0th**: No history, predict 1st observation (poorest)
-   - **25th**: Use bottom 25% as history, predict next
-   - **50th**: Use bottom 50% as history, predict median
-   - **75th**: Use bottom 75% as history, predict next
-3. Aggregate coverage across all test states
-
-**Proposed Methods**: Can use test state history for adaptation
+History sizes (o values): {0, 4, 8, 12, 17} where 17 = min test clinic size - 1
 
 ### Usage
 
 ```bash
-cd real_data/acs
+cd /Users/soham/UPenn/Claude/hier_current/real_data
 
-# Step 1: Download data (all 50 states)
-python3 load_acs_data.py --year 2018 --output data/acs_data_all50states.csv --all_states
-
-# Step 2: Run marginal experiments
-python3 run_acs_marginal.py data/acs_data_all50states.csv --top_income_pct 25 --alpha 0.1
-
-# Step 3: Run sequential experiments
-python3 run_acs_sequential.py data/acs_data_all50states.csv \
-    --top_income_pct 50 --n_training_states 19 \
-    --test_states SC AL TN DE AR --alpha 0.1
+# Run BP repeated experiment (B=100 replicates)
+python3 repeated_experiments.py --dataset bp --B_bp 100
 ```
 
-### Results
+### Output
 
-**Location**: `results/marginal/` or `results/sequential/`
+Plots:
+- blood_pressure/plots/bp.png - Main plot (excluding Repeated method)
+- blood_pressure/plots/bp_all.png - All methods
 
-**Summary file** columns:
-- Percentile coverage (0, 25, 50, 75)
-- Overall coverage (average)
-- Mean/median interval width
-- Proportion of infinite intervals
-- Target coverage and difference
+Results:
+- blood_pressure/results/bp_detailed.csv - Detailed results (all replicates)
 
-**Actual Results** (marginal, α=0.1, 90% target coverage):
-- HCP++: 100% coverage, ~2.53 width, 6.7% infinite intervals
-- HCP.sample: 87% coverage, ~1.90 width, 0% infinite
-- HCP: 87% coverage, ~2.25 width, 0% infinite
-- Pooling: 85% coverage, ~1.99 width, 0% infinite
-
-**Key Findings**:
-- HCP++ achieves target coverage with slight overcoverage
-- HCP.sample has narrower intervals but slightly under target
-- All methods perform reasonably well with appropriate width-coverage tradeoff
-
----
-
-## Dataset 2: Blood Pressure
+## Experiment 2: ACS State-Level
 
 ### Overview
 
-**Goal**: Predict SBP at 12 months across clinic sites
+Goal: Predict income for recent immigrants across US states
+Data Source: ACS PUMS 2018
+Groups: 35 states (18 non-test, 17 test) after removing top-15 largest states
+Outcome: log(income + 1)
+Population: Foreign-born immigrants (YOEP >= 2017), top 25% income per state
 
-**Data Source**: Hypertension intervention trial (treatment arm)
+### Bootstrap Design
 
-### Population
-- Treatment arm only (605 observations)
-- 32 clinics (15 test, 17 training)
-- Minimum 5 participants per clinic
+For each of B=100 replicates:
+1. Sample with replacement from each of the 35 states (size = original state size)
+2. Randomly split 18 non-test states into training (9) and calibration (9)
+3. Fit model on training states, compute scores on calibration states
+4. Evaluate on all 17 test states at different history sizes o
 
-### Outcome and Covariates
-
-**Outcome (Y)**: Follow-up SBP at 12 months (mmHg)
-- Range: [90.7, 198.0] mmHg
-- Mean: 139.4 mmHg, Std: 18.8 mmHg
-
-**Covariates (X)**: Baseline SBP
-
-### Experimental Setup
-
-#### Training/Calibration
-- **Training clinics**: 17 smaller/medium clinics (~277 observations)
-- **Split**: First half fits μ-model, second half computes scores
-- **Key**: Test clinic data NEVER used in baseline calibration
-
-#### Marginal Coverage Calculation
-For each test clinic:
-1. **Order observations by baseline SBP** (ascending)
-2. For percentiles p ∈ {0, 25, 50, 75}: predict observation at percentile p
-3. Aggregate coverage across all test clinics
+History sizes (o values): {0, 2, 5, 7, 10} where 10 = min test state size - 1
 
 ### Usage
 
 ```bash
-cd real_data/blood_pressure
+# Run ACS repeated experiment (B=100 replicates)
+python3 repeated_experiments.py --dataset acs_top25 --B_acs 100
 
-# Step 1: Load data
-python3 load_bp_data.py data/ --output data/bp_data.csv
-
-# Step 2: Run marginal experiments
-python3 run_bp_marginal.py data/bp_data.csv --n_test_clinics 15 --alpha 0.2
+# Run both BP and ACS
+python3 repeated_experiments.py --dataset all --B_bp 100 --B_acs 100
 ```
 
-### Results
+### Output
 
-**Actual Results** (marginal, α=0.2, 80% target coverage):
-- HCP++: 87% coverage, ~50.5 mmHg width, 0% infinite
-- HCP.sample: 90% coverage, ~48.3 mmHg width, 0% infinite
-- HCP: 100% coverage, ~56.9 mmHg width, 0% infinite
-- Pooling: 97% coverage, ~45.5 mmHg width, 0% infinite
+Plots:
+- acs/plots/acs.png - Main plot (excluding Repeated method)
+- acs/plots/acs_all.png - All methods
 
-**Key Findings**:
-- HCP++ and HCP.sample achieve close to target coverage
-- Baseline methods (HCP, Pooling, Subsampling, Repeated) are conservative (over-cover)
-- HCP.sample has the narrowest intervals among non-conservative methods
-- Wide intervals reflect limited training data (17 clinics) and high residual variance
+Results:
+- acs/results/acs_detailed.csv - Detailed results (all replicates)
 
----
+## Experiment 3: ACS PUMS (Within-State Hierarchical)
 
-## Experiment Types
+### Overview
 
-### Sequential (Online)
-- Observations arrive over time
-- Predict each new observation using all prior data
-- Coverage tested at each time point
+Goal: Predict income for recent immigrants across PUMAs within a single state
+Data Source: ACS PUMS 2018 via folktables
+Groups: PUMAs within one state (configurable; default state is CA)
+Outcome: Income (PINCP)
+Population (repeated_experiments.py path):
+- Foreign-born only
+- Age in [25, 54]
+- Recent entry window: last 4 years in YOEP
+- Hours worked >= 0
+- Income > 0
+- Drop missing key fields used by covariates/outcome
 
-### Marginal
-- Test coverage at specific covariate quantiles
-- Order by key variable (income, baseline SBP)
-- Predict at 0th, 25th, 50th, 75th percentiles
-- Ensures coverage across covariate distribution
+This experiment addresses the concern that states may not be exchangeable. Within a single state, PUMAs are more likely to be exchangeable units.
 
----
+### Current locked PUMA rerun (Apr 2026, top-2% trimmed)
 
-## Key Implementation Details
+Command used:
 
-### Calibration Structure
+```bash
+cd /Users/soham/UPenn/Claude/hier_current
+/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments.py \
+   --dataset acs_puma \
+   --B_acs 100 \
+   --acs_state CA \
+   --acs_n_groups 30 \
+   --acs_min_group_size 20 \
+   --acs_min_yoep 2012 \
+   --acs_min_hours 40 \
+   --acs_min_income 10000 \
+   --acs_bottom_income_quantile 0.98 \
+   --acs_no_age_filter \
+   --acs_expected_eligible_pumas 60 \
+   --acs_expected_test_pumas 30 \
+   --acs_o_values 0,5,10,20
+```
 
-**Baseline Methods (HCP, Pooling, Subsampling, Repeated):**
-- Use ONLY training groups (never see test group data)
-- Split training groups: half for μ-model, half for scores
+Observed group counts for this run:
+- State: CA
+- Foreign-born only; age filter disabled
+- YOEP cutoff: `>= 2012`
+- Hours filter: `>= 40`
+- Income filter: `>= 10,000`
+- Income tail trimming: keep bottom 98% within CA
+- Rows after full cleaning: 3,864
+- Eligible PUMAs (size >= 20): 60
+- Non-test/test split each replicate: 30 / 30
+- Evaluated history sizes: `o = {0, 5, 10, 20}`
 
-**Proposed Methods (HCP++, HCP.sample):**
-- Use same baseline calibration
-- Additionally receive test group history as input
-- Can adapt based on test group characteristics
+### NEW_RESULTS: Stratified ACS filtering details (May 2026)
 
-### Why Separate load_*.py and data_processing.py?
+Current stratified run uses `real_data/repeated_experiments_stratified_acs.py` with:
 
-- **load_*.py**: Data acquisition (download, read files)
-- **data_processing.py**: Data transformation (filter, clean, features)
-- Separation: I/O vs business logic
+```bash
+/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments_stratified_acs.py \
+   --B_acs 100 \
+   --n_workers 6
+```
 
-### Results Files
+Exact filtering used in this run:
+- State filter: CA only
+- Nativity filter: foreign-born only (`nativity == 2`)
+- Age filter: `25 <= age <= 54` (enabled by default)
+- Entry-year filter: `YOEP >= 2012` (`--acs_min_yoep 2012`)
+- Labor filter: `hours >= 40` (`--acs_min_hours 40`)
+- Income validity: `income > 0`
+- Income floor: `income >= 10,000` (`--acs_min_income 10000`)
+- Income upper-tail trimming: none in this run (`--acs_bottom_income_quantile` not set)
+- Missing-data filter: drop rows missing key modeling fields (`y`, `age`, `age_sq`, `hours`, `entry_recency`, `educ_level`, `married`, `female`, `english`, `cow`)
+- Group eligibility: keep PUMAs with at least 20 observations after all filters
 
-**Detailed** (`*_detailed.csv`):
-- One row per prediction
-- All methods, all predictions
-- For: plotting, analysis, debugging
+Observed counts for this stratified run:
+- Rows after full cleaning: 3,268
+- Eligible PUMAs (size >= 20): 45
+- Split: 20 non-test PUMAs (stratified sample) + 25 test PUMAs
+- Stratification variable: PUMA-level BA+ share (`educ_level == BAplus`)
+- Stratification scheme: 5 quantile bins (`pd.qcut`) over eligible PUMAs, balanced sampling across bins
 
-**Summary** (`*_summary.csv`):
-- One row per method
-- Aggregated metrics
-- For: tables, comparisons
+Changes relative to your original setup text (61-eligible description):
+- Age filter changed: original text uses age 25-54 and stratified run also uses age 25-54, so no change here.
+- Bottom-98% trimming changed: original text keeps bottom 98%; current stratified run does not trim top incomes by default.
+- Historical-group count changed: original text uses `K=30`; current stratified run uses `K=20` non-test PUMAs.
+- Group assignment changed: original uses simple random non-test PUMA sampling; current run uses stratified sampling by BA+ share.
+- Eligible-PUMA count changed from your earlier write-up (61) to 45 in the current run because this run combines age 25-54, stricter recent-entry and labor/income filters, and no forced split-count check.
 
----
+Reproducibility checks run in this codebase:
+- With stratified defaults (age 25-54, no bottom-98% trim): 45 eligible PUMAs.
+- If bottom-98% trim is added (`--acs_bottom_income_quantile 0.98`) while keeping age 25-54: 44 eligible PUMAs.
+- If using older locked settings (`--acs_no_age_filter --acs_bottom_income_quantile 0.98`): 60 eligible PUMAs.
 
-## Troubleshooting
+So the main practical reason for 45 vs older 60/61-style counts is that the current stratified run is not the same filter profile as the older locked run (especially age filtering enabled and different split design), and your prior notes likely came from an earlier pipeline snapshot.
 
-**"No training states"**: Ensure `states_keep=None` to load all 50 states
+### New eligibility metadata CSV (requested table)
 
-**Many infinite intervals**: Insufficient calibration data
+We now save a table with one row per eligible CA PUMA that includes:
+- State/run metadata (state, raw/filtered/eligible counts, sampling seed, filters used)
+- PUMA role (sampled non-test vs test)
+- Sample size per PUMA
+- Outcome summaries (`outcome_y_mean`, `income_mean`)
+- Covariate summaries (means of the covariates used in the design matrix, including dummy-coded features)
 
-**100% coverage**: Very wide intervals (conservative), check widths vs outcome range
+File:
+- acs/results/acs_puma_eligibility_metadata.csv
 
----
+Generate/update it with:
 
-## Citation
+```bash
+cd /Users/soham/UPenn/Claude/hier_current
+/Users/soham/UPenn/Claude/hier_current/.venv/bin/python \
+   real_data/acs/generate_puma_metadata_table.py \
+   --state CA \
+   --min_group_size 10 \
+   --n_groups 30 \
+   --group_seed 42 \
+   --yoep_window_years 4
+```
 
-[To be added]
+### Two Experiment Modes
 
-## Contact
+1. Proportion-based: o = {0%, 25%, 50%, 75%, 100%} of each test PUMA's size
+2. Fixed-o: o = {0, floor(m/4), floor(m/2), floor(3m/4), m-1} where m = min test PUMA size
 
-[To be added]
+### Usage
+
+```bash
+cd /Users/soham/UPenn/Claude/hier_current/real_data
+
+# ACS PUMA experiment in repeated_experiments.py (latest locked setup)
+/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments.py \
+   --dataset acs_puma \
+   --B_acs 100 \
+   --acs_state CA \
+   --acs_n_groups 30 \
+   --acs_min_group_size 20 \
+   --acs_min_yoep 2012 \
+   --acs_min_hours 40 \
+   --acs_min_income 10000 \
+   --acs_bottom_income_quantile 0.98 \
+   --acs_no_age_filter \
+   --acs_expected_eligible_pumas 60 \
+   --acs_expected_test_pumas 30 \
+   --acs_o_values 0,5,10,20
+
+# Alternative script under acs_pums/ (proportion/fixed modes)
+cd acs_pums
+python3 bootstrap_pums.py --B 100 --state CA --year 2018
+```
+
+See acs_pums/README.md for detailed documentation.
+
+### Output
+
+Plots:
+- acs/plots/acs_effect_of_o_coverage_main_compare_bottom98.pdf
+- acs/plots/acs_effect_of_o_width_main_compare_bottom98.pdf
+
+Results:
+- acs/results/acs_new_detailed_bottom98.csv
+- acs/results/acs_puma_filtered_summary_bottom98.csv
+
+## Parameters
+
+All experiments use:
+- alpha = 0.2 (target coverage = 80%)
+- alpha_selection = 0.5 (CDF threshold for donor selection in HCP++/HCP.sample)
+- n_repeated = 50 (repetitions for Repeated Subsampling)
+
+## Implementation Details
+
+### Bootstrap Procedure
+
+For each replicate:
+1. Bootstrap all groups (non-test + test) with replacement
+2. Random split of non-test groups into training and calibration
+3. Baselines (HCP, Pooling, Subsampling, Repeated):
+   - Fit model on training groups
+   - Compute scores on calibration groups
+   - Same interval for all history sizes o (no history dependence)
+4. HCP methods (HCP++, HCP.sample):
+   - Fit model on complement of S_tilde (donor selection based on CDF)
+   - Compute scores on S_tilde + test group history
+   - Different interval for each history size o
+
+### Key Differences from Previous Experiments
+
+Old experiments used fixed test/calibration splits and sequential/marginal evaluation.
+
+New experiments use bootstrap resampling to:
+- Better quantify uncertainty (100 replicates)
+- Evaluate coverage/width variability across different data splits
+- Compare methods at multiple history sizes simultaneously
+
+## Output Files
+
+Each experiment produces:
+- Plots: Boxplots showing coverage and interval width distributions across bootstrap replicates
+- CSV: Detailed results with one row per (replicate, method, history_size) combination
+
+CSV columns:
+- replicate: Bootstrap replicate number (1 to B)
+- method: Method name
+- o or proportion: History size (absolute or proportion)
+- coverage: Coverage rate (0 to 1)
+- width: Mean interval width
+
+## Notes
+
+- All methods use global OLS regression (tau=0, no shrinkage in mu estimation)
+- HCP++ and HCP.sample use shrinkage for scoring but global prediction for baselines
+- Test groups are never used for training in baseline methods
+- Bootstrap resampling is done with replacement within each group
+- Group assignments (test vs non-test) are fixed across all bootstrap replicates
+
+### Replicate and coverage details for acs_puma (repeated_experiments.py)
+
+- Each bootstrap replicate resamples each selected PUMA independently with replacement, preserving that PUMA's original size N_k.
+- One target is evaluated per test PUMA: the last bootstrapped observation of that PUMA.
+- Coverage per replicate is the mean of covered/not-covered indicators across test PUMAs (equal weight per test PUMA).
+- Baselines (HCP, Pooling, Subsampling, Repeated) do not use test history, so their replicate-level values are copied across all o values.
+- donor/sample methods recompute intervals for each o using first o points as history and the last point as the target.
+
+### HCP "infinite interval" sanity check
+
+For the rerun above (CA, 30 sampled non-test PUMAs, min size 5):
+- Detailed results file: acs/results/acs_new_detailed.csv
+- NaN width rate (proxy for infinite intervals) is 0.0 for all methods, including HCP.
+- HCP mean coverage is about 0.828, not near 1.
+
+If you set --acs_min_group_size too low (for example 1), many test PUMAs have size 1 and m becomes 1, so only o=0 is evaluated; this can make behavior look unstable or overly conservative because test groups are tiny.
