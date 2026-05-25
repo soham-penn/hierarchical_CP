@@ -73,7 +73,7 @@ History sizes (o values): {0, 4, 8, 12, 17} where 17 = min test clinic size - 1
 ### Usage
 
 ```bash
-cd /Users/soham/UPenn/Claude/hier_current/real_data
+cd /path/to/hierarchical_cp/real_data
 
 # Run BP repeated experiment (B=100 replicates)
 python3 repeated_experiments.py --dataset bp --B_bp 100
@@ -150,7 +150,7 @@ This experiment addresses the concern that states may not be exchangeable. Withi
 Current stratified run uses `real_data/repeated_experiments_stratified_acs.py` with:
 
 ```bash
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments_stratified_acs.py \
+.venv/bin/python -u real_data/repeated_experiments_stratified_acs.py \
    --B_acs 100 \
    --n_workers 6
 ```
@@ -203,8 +203,8 @@ File:
 Generate/update it with:
 
 ```bash
-cd /Users/soham/UPenn/Claude/hier_current
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python \
+cd /path/to/hierarchical_cp
+.venv/bin/python \
    real_data/acs/generate_puma_metadata_table.py \
    --state CA \
    --min_group_size 10 \
@@ -221,10 +221,10 @@ cd /Users/soham/UPenn/Claude/hier_current
 ### Usage
 
 ```bash
-cd /Users/soham/UPenn/Claude/hier_current/real_data
+cd /path/to/hierarchical_cp/real_data
 
 # Stratified ACS PUMA experiment
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments_stratified_acs.py \
+../.venv/bin/python -u repeated_experiments_stratified_acs.py \
    --B_acs 100 \
    --n_workers 6
 ```

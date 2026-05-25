@@ -120,7 +120,7 @@ Both use the same joint-Gaussian group model and differ only in group-size gener
 #### Fixed-size run
 
 ```bash
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u DGP/code/run_fixed_n51_k20_joint_xy_marginal.py
+.venv/bin/python -u DGP/code/run_fixed_n51_k20_joint_xy_marginal.py
 ```
 
 - Group sizes: `N_i = 51` for all calibration and test groups.
@@ -129,7 +129,7 @@ Both use the same joint-Gaussian group model and differ only in group-size gener
 #### Poisson-size run
 
 ```bash
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u DGP/code/run_poisson_nmean21_k20_joint_xy_marginal.py
+.venv/bin/python -u DGP/code/run_poisson_nmean21_k20_joint_xy_marginal.py
 ```
 
 - Group sizes: `N_i = 1 + Poisson(20)`.
@@ -189,8 +189,8 @@ The latest ACS rerun uses the single-state PUMA repeated-experiment pipeline in 
 Command:
 
 ```bash
-cd /Users/soham/UPenn/Claude/hier_current
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments.py \
+cd /path/to/hierarchical_cp
+.venv/bin/python -u real_data/repeated_experiments.py \
   --dataset acs_puma \
   --B_acs 100 \
   --acs_state CA \

@@ -10,12 +10,12 @@ Plots produced:
 Width plots are truncated at y = 15.
 
 Input:
-    /Users/soham/UPenn/Claude/hier_current/NEW_RESULTS_2/
+    <repo>/NEW_RESULTS_2/
     fixedN21_K20_d5_u15_rho05_joint_xy_marginal_parallel5/
     raw_results_effect_of_o_joint_xy_marginal.csv
 
 Output:
-    /Users/soham/UPenn/Claude/hier_current/NEW_PLOTS_2/
+    <repo>/NEW_PLOTS_2/
     fixedN21_K20_d5_u15_rho05_joint_xy_marginal_parallel5/
 """
 
@@ -34,7 +34,7 @@ from matplotlib.offsetbox import AnchoredOffsetbox, DrawingArea, HPacker, TextAr
 # ---------------------------------------------------------------------
 # Fixed paths
 # ---------------------------------------------------------------------
-BASE_DIR = Path("/Users/soham/UPenn/Claude/hier_current")
+BASE_DIR = Path(__file__).resolve().parents[1]
 RAW_FILE = (
     BASE_DIR
     / "NEW_RESULTS_2"
