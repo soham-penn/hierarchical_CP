@@ -145,41 +145,7 @@ Population (repeated_experiments.py path):
 
 This experiment addresses the concern that states may not be exchangeable. Within a single state, PUMAs are more likely to be exchangeable units.
 
-### Current locked PUMA rerun (Apr 2026, top-2% trimmed)
-
-Command used:
-
-```bash
-cd /Users/soham/UPenn/Claude/hier_current
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments.py \
-   --dataset acs_puma \
-   --B_acs 100 \
-   --acs_state CA \
-   --acs_n_groups 30 \
-   --acs_min_group_size 20 \
-   --acs_min_yoep 2012 \
-   --acs_min_hours 40 \
-   --acs_min_income 10000 \
-   --acs_bottom_income_quantile 0.98 \
-   --acs_no_age_filter \
-   --acs_expected_eligible_pumas 60 \
-   --acs_expected_test_pumas 30 \
-   --acs_o_values 0,5,10,20
-```
-
-Observed group counts for this run:
-- State: CA
-- Foreign-born only; age filter disabled
-- YOEP cutoff: `>= 2012`
-- Hours filter: `>= 40`
-- Income filter: `>= 10,000`
-- Income tail trimming: keep bottom 98% within CA
-- Rows after full cleaning: 3,864
-- Eligible PUMAs (size >= 20): 60
-- Non-test/test split each replicate: 30 / 30
-- Evaluated history sizes: `o = {0, 5, 10, 20}`
-
-### NEW_RESULTS: Stratified ACS filtering details (May 2026)
+### Stratified ACS filtering details (May 2026)
 
 Current stratified run uses `real_data/repeated_experiments_stratified_acs.py` with:
 
@@ -257,38 +223,18 @@ cd /Users/soham/UPenn/Claude/hier_current
 ```bash
 cd /Users/soham/UPenn/Claude/hier_current/real_data
 
-# ACS PUMA experiment in repeated_experiments.py (latest locked setup)
-/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments.py \
-   --dataset acs_puma \
+# Stratified ACS PUMA experiment
+/Users/soham/UPenn/Claude/hier_current/.venv/bin/python -u real_data/repeated_experiments_stratified_acs.py \
    --B_acs 100 \
-   --acs_state CA \
-   --acs_n_groups 30 \
-   --acs_min_group_size 20 \
-   --acs_min_yoep 2012 \
-   --acs_min_hours 40 \
-   --acs_min_income 10000 \
-   --acs_bottom_income_quantile 0.98 \
-   --acs_no_age_filter \
-   --acs_expected_eligible_pumas 60 \
-   --acs_expected_test_pumas 30 \
-   --acs_o_values 0,5,10,20
-
-# Alternative script under acs_pums/ (proportion/fixed modes)
-cd acs_pums
-python3 bootstrap_pums.py --B 100 --state CA --year 2018
+   --n_workers 6
 ```
-
-See acs_pums/README.md for detailed documentation.
 
 ### Output
 
-Plots:
-- acs/plots/acs_effect_of_o_coverage_main_compare_bottom98.pdf
-- acs/plots/acs_effect_of_o_width_main_compare_bottom98.pdf
-
 Results:
-- acs/results/acs_new_detailed_bottom98.csv
-- acs/results/acs_puma_filtered_summary_bottom98.csv
+- acs/results/stratified/acs_stratified_summary.csv
+- acs/results/stratified/acs_stratified_summary_long.csv
+- acs/results/stratified/acs_stratified_data_overview.csv
 
 ## Parameters
 

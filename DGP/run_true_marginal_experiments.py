@@ -15,6 +15,7 @@ Settings:
 
 from pathlib import Path
 import sys
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
@@ -40,6 +41,14 @@ N_WORKERS = 5
 BASE_SEED = 456  # Different seed from previous experiments
 
 
+def alpha_to_tag(alpha):
+    """Stable filename tag, e.g. 0.1 -> alpha10 and 0.075 -> alpha7p5."""
+    pct = f"{100.0 * float(alpha):.6g}".replace(".", "p")
+    if "p" not in pct and len(pct) < 2:
+        pct = pct.zfill(2)
+    return f"alpha{pct}"
+
+
 def split_counts(total, n_parts):
     """Split total count into n_parts as evenly as possible."""
     base = total // n_parts
@@ -54,6 +63,23 @@ def offset_experiment_column(df, offset):
         if col in out.columns:
             out[col] = out[col] + offset
             break
+    return out
+
+
+def without_within_group_training(mu_method):
+    """Return a mu_method wrapper that ignores within-group history."""
+    base_predict_global = mu_method["predict_global"]
+    out = dict(mu_method)
+
+    def fit_group_adjustment(model_global, u_group_vector,
+                             Z_group_list, training_index_vector):
+        return 0.0
+
+    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
+        return base_predict_global(model_global, x_vector, u_group_vector)
+
+    out["fit_group_adjustment"] = fit_group_adjustment
+    out["predict_group_mu"] = predict_group_mu
     return out
 
 
@@ -77,6 +103,7 @@ def run_chunk(
     if config.get("generation_mode") == "fixed":
         patch_fixed_size_generators(
             fixed_n=config["fixed_n"],
+            target_n=config["target_n"],
             dimension=config["dimension"],
             u_min=config["u_min"],
             u_max=config["u_max"],
@@ -93,6 +120,7 @@ def run_chunk(
 
     mu_baseline = create_mu_method_ols_global_only()
     mu_hcp = create_mu_method_ols_offset()
+    mu_hcp_no_within = without_within_group_training(create_mu_method_ols_offset())
 
     # KEY CHANGE: number_test_groups = 1 (true marginal)
     results = run_experiments_outer(
@@ -112,6 +140,7 @@ def run_chunk(
         number_test_groups=1,  # TRUE MARGINAL: 1 test group per experiment
         mu_method_baseline=mu_baseline,
         mu_method_hcp=mu_hcp,
+        mu_method_hcp_no_within=mu_hcp_no_within,
         show_progress=False,
     )
 
@@ -120,7 +149,7 @@ def run_chunk(
     return results
 
 
-def patch_fixed_size_generators(fixed_n, dimension, u_min, u_max, rho):
+def patch_fixed_size_generators(fixed_n, target_n, dimension, u_min, u_max, rho):
     """Patch experiment module with fixed group size generators."""
 
     def generate_calibration_data_fixed(number_groups, lambda_Poisson, dgp_specification):
@@ -138,19 +167,19 @@ def patch_fixed_size_generators(fixed_n, dimension, u_min, u_max, rho):
         }
 
     def generate_test_group_fixed(lambda_Poisson, dgp_specification, o_observed, fixed_U=None):
-        if fixed_n <= o_observed:
-            raise ValueError(f"Fixed group size N={fixed_n} is not greater than o_observed={o_observed}.")
+        if target_n <= o_observed:
+            raise ValueError(f"Fixed target group size N={target_n} is not greater than o_observed={o_observed}.")
 
         if fixed_U is not None:
             u_test = np.asarray(fixed_U, dtype=float).reshape(1, -1)
         else:
             u_test = np.random.uniform(low=u_min, high=u_max, size=(1, dimension))
 
-        z_test = draw_group_joint_xy(u_test[0, :], fixed_n, rho=rho)
+        z_test = draw_group_joint_xy(u_test[0, :], target_n, rho=rho)
         return {
             "U_test": u_test,
             "Z_test": z_test,
-            "N_test": fixed_n,
+            "N_test": target_n,
         }
 
     exp_mod.generate_calibration_data = generate_calibration_data_fixed
@@ -164,8 +193,7 @@ def patch_poisson_generators(lambda_poisson, dimension, u_min, u_max, rho):
         u_cal = np.random.uniform(
             low=u_min, high=u_max, size=(number_groups, dimension)
         )
-        n_vec = np.random.poisson(lam=lambda_poisson, size=number_groups)
-        n_vec = np.maximum(n_vec, 1)  # At least 1 observation per group
+        n_vec = 1 + np.random.poisson(lam=lambda_poisson, size=number_groups)
         z_cal = []
         for j in range(number_groups):
             z_cal.append(draw_group_joint_xy(u_cal[j, :], int(n_vec[j]), rho=rho))
@@ -181,13 +209,11 @@ def patch_poisson_generators(lambda_poisson, dimension, u_min, u_max, rho):
         else:
             u_test = np.random.uniform(low=u_min, high=u_max, size=(1, dimension))
 
-        n_test = np.random.poisson(lam=lambda_poisson)
-        n_test = max(1, n_test)
+        n_test = 1 + np.random.poisson(lam=lambda_poisson)
 
         # Make sure we have enough observations
         while n_test <= o_observed:
-            n_test = np.random.poisson(lam=lambda_poisson)
-            n_test = max(1, n_test)
+            n_test = 1 + np.random.poisson(lam=lambda_poisson)
 
         z_test = draw_group_joint_xy(u_test[0, :], n_test, rho=rho)
         return {
@@ -220,6 +246,7 @@ def run_true_marginal_experiment(config_name, config):
     print(f"Generation mode: {config.get('generation_mode')}")
     if config.get('generation_mode') == 'fixed':
         print(f"Fixed N: {config.get('fixed_n')}")
+        print(f"Fixed target N: {config.get('target_n')}")
     else:
         print(f"Poisson lambda: {config.get('lambda_poisson')}")
     print(f"K (calibration groups): {config['number_groups_k']}")
@@ -273,58 +300,96 @@ def run_true_marginal_experiment(config_name, config):
     return results
 
 
-def main():
-    """Run true marginal experiments for both fixed N and Poisson N configurations."""
+def build_configs(total_replicates=1000, alpha=0.1):
+    """Build true-marginal DGP configs for a given alpha."""
+    o_values = [0, 5, 10, 15, 20, 25, 30, 35]
+    target_index = 35
 
-    # Configuration 1: Fixed N = 21
     config_fixedN21 = {
         "generation_mode": "fixed",
         "fixed_n": 21,
-        "total_replicates": 1000,
+        "target_n": target_index + 1,
+        "total_replicates": int(total_replicates),
         "number_groups_k": 20,
         "dimension": 5,
         "u_min": 1.0,
         "u_max": 5.0,
         "rho": 0.5,
-        "o_values": [0, 5, 10, 15, 20],
-        "target_index": 20,
-        "alpha": 0.1,
+        "o_values": o_values,
+        "target_index": target_index,
+        "alpha": float(alpha),
     }
 
-    # Configuration 2: Poisson with mean 21
     config_poissonNmean21 = {
         "generation_mode": "poisson",
-        "lambda_poisson": 21,
-        "total_replicates": 1000,
+        "lambda_poisson": 20,
+        "total_replicates": int(total_replicates),
         "number_groups_k": 20,
         "dimension": 5,
         "u_min": 1.0,
         "u_max": 5.0,
         "rho": 0.5,
-        "o_values": [0, 5, 10, 15, 20],
-        "target_index": 20,
-        "alpha": 0.1,
+        "o_values": o_values,
+        "target_index": target_index,
+        "alpha": float(alpha),
     }
 
-    # Run both configurations
-    print("\n\n")
-    print("╔" + "═" * 94 + "╗")
-    print("║" + " " * 30 + "CONFIGURATION 1: Fixed N=21" + " " * 37 + "║")
-    print("╚" + "═" * 94 + "╝")
-    results_fixed = run_true_marginal_experiment("fixedN21", config_fixedN21)
+    return {
+        "fixedN21": config_fixedN21,
+        "poissonNmean21": config_poissonNmean21,
+    }
 
-    print("\n\n")
-    print("╔" + "═" * 94 + "╗")
-    print("║" + " " * 27 + "CONFIGURATION 2: Poisson N (mean=21)" + " " * 32 + "║")
-    print("╚" + "═" * 94 + "╝")
-    results_poisson = run_true_marginal_experiment("poissonNmean21", config_poissonNmean21)
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run DGP true-marginal experiments for one or more alpha values."
+    )
+    parser.add_argument(
+        "--alphas",
+        type=str,
+        default="0.1",
+        help="Comma-separated alpha values, e.g. 0.2,0.175,0.15.",
+    )
+    parser.add_argument(
+        "--configs",
+        type=str,
+        default="fixedN21,poissonNmean21",
+        help="Comma-separated configs: fixedN21,poissonNmean21.",
+    )
+    parser.add_argument("--total_replicates", type=int, default=1000)
+    parser.add_argument("--n_workers", type=int, default=N_WORKERS)
+    return parser.parse_args()
+
+
+def main():
+    """Run true marginal experiments for requested DGP configurations."""
+    global N_WORKERS
+    args = parse_args()
+    N_WORKERS = int(args.n_workers)
+
+    alphas = [float(a.strip()) for a in args.alphas.split(",") if a.strip()]
+    config_names = [c.strip() for c in args.configs.split(",") if c.strip()]
+
+    all_configs = set(build_configs().keys())
+    unknown = sorted(set(config_names) - all_configs)
+    if unknown:
+        raise ValueError(f"Unknown configs {unknown}. Available: {sorted(all_configs)}")
+
+    for alpha in alphas:
+        configs = build_configs(total_replicates=args.total_replicates, alpha=alpha)
+        alpha_tag = alpha_to_tag(alpha)
+        for name in config_names:
+            print("\n\n")
+            print("╔" + "═" * 94 + "╗")
+            title = f"CONFIGURATION: {name}, {alpha_tag}"
+            print("║" + title.center(94) + "║")
+            print("╚" + "═" * 94 + "╝")
+            run_true_marginal_experiment(f"{name}_{alpha_tag}", configs[name])
 
     print("\n\n" + "=" * 96)
     print("ALL EXPERIMENTS COMPLETED!")
     print("=" * 96)
     print(f"Results saved to: {PROJECT_ROOT / 'NEW_RESULTS'}")
-    print("  - true_marg_fixedN21/")
-    print("  - true_marg_poissonNmean21/")
     print("=" * 96)
 
 

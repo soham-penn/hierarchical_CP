@@ -238,12 +238,12 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
 
         X_target = Z_test[test_index_target]['X']
         if global_model is not None:
-            mu_global_target = mu_method['predict_global'](
+            mu_center = mu_method['predict_group_mu'](
                 model_global=global_model,
+                group_adjustment=offset_test,
                 x_vector=X_target,
-                u_vector=U_test[0, :],
+                u_group_vector=U_test[0, :],
             )
-            mu_center = mu_global_target + offset_test
         else:
             mu_center = 0.0
 
@@ -313,12 +313,12 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
             q = np.inf
 
         X_target = Z_test[test_index_target]['X']
-        mu_global_target = mu_method['predict_global'](
+        mu_center = mu_method['predict_group_mu'](
             model_global=global_model,
+            group_adjustment=offset_test,
             x_vector=X_target,
-            u_vector=U_test[0, :],
+            u_group_vector=U_test[0, :],
         )
-        mu_center = mu_global_target + offset_test
         interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
         return {
             'interval': interval,
@@ -430,12 +430,12 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
         q = weighted_quantile(scores, weights, alpha)
 
     X_target = Z_test[test_index_target]['X']
-    mu_global_target = mu_method['predict_global'](
+    mu_center = mu_method['predict_group_mu'](
         model_global=global_model,
+        group_adjustment=offset_test,
         x_vector=X_target,
-        u_vector=U_test[0, :],
+        u_group_vector=U_test[0, :],
     )
-    mu_center = mu_global_target + offset_test
     interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
 
     return {

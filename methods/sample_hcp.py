@@ -63,7 +63,8 @@ def _select_s_tilde_with_tie_randomization(N, o_observed, alpha_selection):
 
 def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_test, Z_test,
                                                  o_observed, alpha, alpha_selection, mu_method,
-                                                 test_index_target=None):
+                                                 test_index_target=None,
+                                                 tau_override=None):
     """Randomized sample-HCP interval implementation (formerly in hcp_sample.py)."""
     K = len(Z_calibration)
     N = np.array([len(Z_calibration[j]) for j in range(K)])
@@ -104,6 +105,7 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
             alpha_selection=alpha_selection,
             mu_method=mu_method,
             test_index_target=test_index_target,
+            tau_override=tau_override,
         )
         return {
             'interval': res_dr['interval'],
@@ -114,11 +116,15 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
     S = np.sort(np.concatenate([S_tilde, [test_idx]]))
     S_size = len(S)
 
-    tau = int(np.floor(o_observed / 2))
-    if tau < 0:
-        tau = 0
-    if o_observed > 0 and tau >= o_observed:
-        tau = o_observed - 1
+    if tau_override is None:
+        tau = int(np.floor(o_observed / 2))
+        if tau < 0:
+            tau = 0
+        if o_observed > 0 and tau >= o_observed:
+            tau = o_observed - 1
+    else:
+        tau = int(tau_override)
+        tau = max(0, min(tau, max(0, o_observed - 1)))
 
     S_comp = np.setdiff1d(list(range(K + 1)), S)
     if len(S_comp) == 0:
@@ -215,12 +221,12 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
     q = weighted_quantile(values, weights, alpha)
 
     X_target = Z_test[test_index_target]['X']
-    mu_global = mu_method['predict_global'](
+    mu_center = mu_method['predict_group_mu'](
         model_global=global_model,
+        group_adjustment=offset_test,
         x_vector=X_target,
-        u_vector=U_test[0, :],
+        u_group_vector=U_test[0, :],
     )
-    mu_center = mu_global + offset_test
 
     if np.isinf(q):
         interval = (-np.inf, np.inf)
@@ -236,7 +242,8 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
 
 def compute_sample_hcp_randomized_interval(U_calibration, Z_calibration, U_test, Z_test,
                                            o_observed, alpha, alpha_selection, mu_method,
-                                           test_index_target=None):
+                                           test_index_target=None,
+                                           tau_override=None):
     """Randomized sample-HCP interval."""
     return _compute_sample_hcp_randomized_interval_impl(
         U_calibration=U_calibration,
@@ -248,6 +255,7 @@ def compute_sample_hcp_randomized_interval(U_calibration, Z_calibration, U_test,
         alpha_selection=alpha_selection,
         mu_method=mu_method,
         test_index_target=test_index_target,
+        tau_override=tau_override,
     )
 
 

@@ -172,10 +172,29 @@ def _make_method(fit_fn, tau, c):
 
     def fit_group_adjustment(model_global, u_group_vector,
                               Z_group_list, training_index_vector):
-        return 0.0
+        """Within-group history: mean Y on training indices (first tau obs)."""
+        idx = list(training_index_vector)
+        if len(idx) == 0:
+            return {"group_mean": 0.0, "tau": 0}
+        group_mean = float(
+            np.mean([Z_group_list[i]["Y"] for i in idx], dtype=float)
+        )
+        return {"group_mean": group_mean, "tau": len(idx)}
 
     def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
-        return predict_global(model_global, x_vector, u_group_vector)
+        """Shrink global prediction toward within-group mean (legacy donor-HCP API)."""
+        if not isinstance(group_adjustment, dict):
+            return predict_global(model_global, x_vector, u_group_vector)
+        group_mean = float(group_adjustment.get("group_mean", 0.0))
+        tau_eff = int(group_adjustment.get("tau", 0))
+        if tau_eff <= 0:
+            return predict_global(model_global, x_vector, u_group_vector)
+        N_comp = 0
+        if model_global is not None:
+            N_comp = int(getattr(model_global, "_n_comp_groups", 0))
+        mu_g = predict_global(model_global, x_vector, u_group_vector)
+        w_g = global_weight(N_comp, tau_eff, c)
+        return w_g * mu_g + (1.0 - w_g) * group_mean
 
     return {
         "fit_global": fit_fn,

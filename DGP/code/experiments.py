@@ -88,7 +88,8 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha):
 def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
                        o_values, target_index, alpha, number_subsampling_repetitions,
                        alpha_selection, number_test_groups,
-                       mu_method_baseline, mu_method_hcp):
+                       mu_method_baseline, mu_method_hcp,
+                       mu_method_hcp_no_within=None):
     """
     Run one experiment comparing all methods across multiple o values.
 
@@ -167,16 +168,19 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
     #    Baselines: one shared array (identical across o values).
     # ------------------------------------------------------------------
     cov_dr  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
+    cov_dr_no_within = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
     cov_dd  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
     cov_sr  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
     cov_sd  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
     cov_stdcp = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
     wid_dr  = {o: np.full(number_test_groups, np.nan) for o in o_values}
+    wid_dr_no_within = {o: np.full(number_test_groups, np.nan) for o in o_values}
     wid_dd  = {o: np.full(number_test_groups, np.nan) for o in o_values}
     wid_sr  = {o: np.full(number_test_groups, np.nan) for o in o_values}
     wid_sd  = {o: np.full(number_test_groups, np.nan) for o in o_values}
     wid_stdcp = {o: np.full(number_test_groups, np.nan) for o in o_values}
     inf_dr  = {o: 0 for o in o_values}
+    inf_dr_no_within = {o: 0 for o in o_values}
     inf_dd  = {o: 0 for o in o_values}
     inf_sr  = {o: 0 for o in o_values}
     inf_sd  = {o: 0 for o in o_values}
@@ -256,6 +260,26 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
             else:
                 inf_dr[o] += 1
 
+            if mu_method_hcp_no_within is not None:
+                res_dr_no = compute_donor_hcp_randomized_interval(
+                    U_calibration=U_cal,
+                    Z_calibration=Z_cal,
+                    U_test=U_test,
+                    Z_test=Z_test,
+                    o_observed=o,
+                    alpha=alpha,
+                    alpha_selection=alpha_selection,
+                    mu_method=mu_method_hcp_no_within,
+                    test_index_target=target_index,
+                    tau_override=0,
+                )
+                lo, hi = res_dr_no['interval']
+                cov_dr_no_within[o][t] = (lo <= true_target <= hi)
+                if np.isfinite(lo) and np.isfinite(hi):
+                    wid_dr_no_within[o][t] = hi - lo
+                else:
+                    inf_dr_no_within[o] += 1
+
             res_dd = compute_donor_hcp_derandomized_interval(
                 U_calibration=U_cal,
                 Z_calibration=Z_cal,
@@ -333,6 +357,7 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
         rows.append({
             'o_observed':          o,
             'coverage_donor_hcp_randomized': np.mean(cov_dr[o]),
+            'coverage_donor_hcp_no_within': np.mean(cov_dr_no_within[o]) if mu_method_hcp_no_within is not None else np.nan,
             'coverage_donor_hcp_derandomized': np.mean(cov_dd[o]),
             'coverage_sample_hcp_randomized': np.mean(cov_sr[o]),
             'coverage_sample_hcp_derandomized': np.mean(cov_sd[o]),
@@ -342,6 +367,7 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
             'coverage_sub':        np.mean(cov_sub),
             'coverage_rep':        np.mean(cov_rep),
             'width_donor_hcp_randomized': _safe_width_median(wid_dr[o]),
+            'width_donor_hcp_no_within': _safe_width_median(wid_dr_no_within[o]) if mu_method_hcp_no_within is not None else np.nan,
             'width_donor_hcp_derandomized': _safe_width_median(wid_dd[o]),
             'width_sample_hcp_randomized': _safe_width_median(wid_sr[o]),
             'width_sample_hcp_derandomized': _safe_width_median(wid_sd[o]),
@@ -351,6 +377,7 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
             'width_sub':           _safe_width_median(wid_sub),
             'width_rep':           _safe_width_median(wid_rep),
             'infinite_donor_hcp_randomized': inf_dr[o],
+            'infinite_donor_hcp_no_within': inf_dr_no_within[o] if mu_method_hcp_no_within is not None else np.nan,
             'infinite_donor_hcp_derandomized': inf_dd[o],
             'infinite_sample_hcp_randomized': inf_sr[o],
             'infinite_sample_hcp_derandomized': inf_sd[o],
@@ -368,6 +395,7 @@ def run_experiments_outer(number_experiments, number_groups_k, lambda_Poisson,
                           number_subsampling_repetitions=50,
                           alpha_selection=0.1, number_test_groups=100,
                           mu_method_baseline=None, mu_method_hcp=None,
+                          mu_method_hcp_no_within=None,
                           show_progress=True):
     """
     Run multiple experiments and return combined results.
@@ -398,7 +426,8 @@ def run_experiments_outer(number_experiments, number_groups_k, lambda_Poisson,
             alpha_selection=alpha_selection,
             number_test_groups=number_test_groups,
             mu_method_baseline=mu_method_baseline,
-            mu_method_hcp=mu_method_hcp
+            mu_method_hcp=mu_method_hcp,
+            mu_method_hcp_no_within=mu_method_hcp_no_within,
         )
         res['experiment'] = e + 1
         results_list.append(res)
