@@ -20,6 +20,8 @@ from matplotlib.patches import Patch
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parent.parent
 RESULTS_ROOT = REPO_ROOT / "NEW_RESULTS"
+if not RESULTS_ROOT.exists():
+    RESULTS_ROOT = REPO_ROOT / "old_results" / "NEW_RESULTS"
 PAPER_PARENT = REPO_ROOT / "paper_plots"
 PAPER_ROOT = PAPER_PARENT / "dgp_true_marginal"
 FIG_DIR = PAPER_ROOT / "figures"
@@ -49,6 +51,7 @@ METHOD_COLORS = {
     "D-HCP": "#005A8C",
     "D-HCP no within": "#f4a582",
     "HCP": "#8E44AD",
+    "Std-CP": "#D55E00",
 }
 NOMINAL_COLOR = "#111111"
 
@@ -73,6 +76,7 @@ METHOD_KEYS = {
     "donor_hcp_randomized": "D-HCP",
     "donor_hcp_no_within": "D-HCP no within",
     "hcp": "HCP",
+    "stdcp": "Std-CP",
 }
 
 # Paper-plot font controls. Adjust these four values if the exported figures
@@ -448,6 +452,7 @@ def plot_alpha_o_axis_panel(
     file_prefix: str,
     o_values: list[int] = O_VALUES,
     out_suffix: str = "",
+    include_stdcp: bool = False,
 ) -> Path:
     """For one alpha, plot coverage over o and width boxplots over o."""
     d_alpha = df[np.isclose(df["alpha"], alpha)].copy()
@@ -459,6 +464,7 @@ def plot_alpha_o_axis_panel(
     ax_cov, ax_width = axes
 
     dhcp = s_alpha[(s_alpha["method"] == "D-HCP") & (s_alpha["o"].isin(o_values))].sort_values("o")
+    stdcp = s_alpha[(s_alpha["method"] == "Std-CP") & (s_alpha["o"].isin(o_values))].sort_values("o")
     hcp = s_alpha[(s_alpha["method"] == "HCP") & (s_alpha["o"] == O_VALUES[0])]
     if dhcp.empty or hcp.empty:
         raise ValueError(f"Missing D-HCP or HCP rows for fixed-N alpha={alpha}")
@@ -483,6 +489,27 @@ def plot_alpha_o_axis_panel(
         capsize=CAPSIZE,
         label="D-HCP",
     )
+    if include_stdcp and not stdcp.empty:
+        _error_band(
+            ax_cov,
+            stdcp["o"].to_numpy(dtype=float),
+            stdcp["coverage_mean"].to_numpy(dtype=float),
+            stdcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
+            METHOD_COLORS["Std-CP"],
+            alpha=0.10,
+        )
+        ax_cov.errorbar(
+            stdcp["o"],
+            stdcp["coverage_mean"],
+            yerr=SE_VISUAL_MULTIPLIER * stdcp["coverage_se"],
+            color=METHOD_COLORS["Std-CP"],
+            marker="^",
+            linestyle="-",
+            linewidth=LINEWIDTH,
+            markersize=MARKERSIZE,
+            capsize=CAPSIZE,
+            label="Std-CP",
+        )
     hcp_cov = float(hcp["coverage_mean"].iloc[0])
     hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
     hcp_x = np.asarray(o_values, dtype=float)
@@ -491,7 +518,14 @@ def plot_alpha_o_axis_panel(
     ax_cov.plot(hcp_x, hcp_y, color=METHOD_COLORS["HCP"], linestyle="-", linewidth=LINEWIDTH, label="HCP")
     ax_cov.fill_between(hcp_x, hcp_y - hcp_band, hcp_y + hcp_band, color=METHOD_COLORS["HCP"], alpha=0.10, linewidth=0)
     ax_cov.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
-    cov_low = min(float((dhcp["coverage_mean"] - 2.0 * dhcp["coverage_se"].fillna(0.0)).min()), hcp_cov - 2.0 * hcp_cov_se, 1.0 - alpha)
+    cov_candidates = [
+        float((dhcp["coverage_mean"] - 2.0 * dhcp["coverage_se"].fillna(0.0)).min()),
+        hcp_cov - 2.0 * hcp_cov_se,
+        1.0 - alpha,
+    ]
+    if include_stdcp and not stdcp.empty:
+        cov_candidates.append(float((stdcp["coverage_mean"] - 2.0 * stdcp["coverage_se"].fillna(0.0)).min()))
+    cov_low = min(cov_candidates)
     y_lower = 0.70 if np.isclose(alpha, 0.10) else max(0.0, cov_low - 0.02)
     ax_cov.set_ylim(y_lower, 1.02)
     ax_cov.set_xlim(min(o_values) - 0.75, max(o_values) + 0.75)
@@ -500,14 +534,17 @@ def plot_alpha_o_axis_panel(
     ax_cov.set_title("Coverage", fontsize=FONT_TITLE, pad=12)
 
     width_values_for_axis: list[float] = []
+    dhcp_offset = -0.75 if include_stdcp else 0.0
+    stdcp_offset = 0.75
+    box_width = BOX_WIDTH_O_AXIS * (0.62 if include_stdcp else 1.0)
     for o in o_values:
         vals = _finite_width_array(d_alpha[(d_alpha["method"] == "D-HCP") & (d_alpha["o"] == o)]["width"])
         if len(vals):
             width_values_for_axis.extend(vals.tolist())
             ax_width.boxplot(
                 [vals],
-                positions=[o],
-                widths=BOX_WIDTH_O_AXIS,
+                positions=[o + dhcp_offset],
+                widths=box_width,
                 patch_artist=True,
                 showfliers=False,
                 medianprops={"color": "#111111", "linewidth": 1.4},
@@ -515,6 +552,21 @@ def plot_alpha_o_axis_panel(
                 capprops={"color": METHOD_COLORS["D-HCP"], "linewidth": 1.1},
                 boxprops={"facecolor": METHOD_COLORS["D-HCP"], "edgecolor": METHOD_COLORS["D-HCP"], "alpha": 0.68, "linewidth": 1.0},
             )
+        if include_stdcp:
+            vals_std = _finite_width_array(d_alpha[(d_alpha["method"] == "Std-CP") & (d_alpha["o"] == o)]["width"])
+            if len(vals_std):
+                width_values_for_axis.extend(vals_std.tolist())
+                ax_width.boxplot(
+                    [vals_std],
+                    positions=[o + stdcp_offset],
+                    widths=box_width,
+                    patch_artist=True,
+                    showfliers=False,
+                    medianprops={"color": "#111111", "linewidth": 1.4},
+                    whiskerprops={"color": METHOD_COLORS["Std-CP"], "linewidth": 1.1},
+                    capprops={"color": METHOD_COLORS["Std-CP"], "linewidth": 1.1},
+                    boxprops={"facecolor": METHOD_COLORS["Std-CP"], "edgecolor": METHOD_COLORS["Std-CP"], "alpha": 0.52, "linewidth": 1.0},
+                )
 
     hcp_vals = _finite_width_array(d_alpha[(d_alpha["method"] == "HCP") & (d_alpha["o"] == O_VALUES[0])]["width"])
     hcp_width_pos = max(o_values) + 6
@@ -545,6 +597,8 @@ def plot_alpha_o_axis_panel(
         Line2D([0], [0], color=METHOD_COLORS["HCP"], linestyle="-", linewidth=LINEWIDTH, label="HCP"),
         Line2D([0], [0], color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal"),
     ]
+    if include_stdcp:
+        handles.insert(1, Line2D([0], [0], color=METHOD_COLORS["Std-CP"], marker="^", linestyle="-", linewidth=LINEWIDTH, label="Std-CP"))
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, fontsize=FONT_LEGEND)
     fig.tight_layout(rect=[0, 0.15, 1, 1])
     out = FIG_DIR / f"{file_prefix}_alpha{_plot_tag(alpha)}_coverage_width_by_o{out_suffix}.pdf"
@@ -831,6 +885,18 @@ def main() -> None:
             "fixedN21",
             o_values=O_VALUES_UPTO30,
             out_suffix="_upto30",
+        )
+    )
+    outputs.append(
+        plot_alpha_o_axis_panel(
+            fixed_trials,
+            fixed_summary,
+            0.10,
+            r"Fixed $N_k=21$",
+            "fixedN21",
+            o_values=O_VALUES,
+            out_suffix="_with_stdcp",
+            include_stdcp=True,
         )
     )
 
