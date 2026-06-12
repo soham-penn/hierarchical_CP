@@ -42,24 +42,18 @@ O_VALUES_UPTO35 = [0, 5, 10, 15, 20, 25, 30, 35]
 NOMINAL_O_VALUES = [0, 10, 20]
 ALPHA_PANEL_VALUES = [0.05, 0.10, 0.20]
 UPTO35_ALPHA_VALUES = [0.10, 0.20]
-NOMINAL_COVERAGE_MAX = 0.90
+NOMINAL_COVERAGE_MAX = pm.NOMINAL_COVERAGE_MAX
 
-O_COLORS = {
-    0: "#0072B2",
-    5: "#00A1D5",
-    10: "#00B894",
-    15: "#F39C12",
-    20: "#E74C3C",
-}
-METHOD_COLORS = {
-    "D-HCP": "#005A8C",
-    "HCP": "#8E44AD",
-    "Pooling": "#009E73",
-    "Subsampling": "#E69F00",
-    "Repeated": "#56B4E9",
-    "Std-CP": "#D55E00",
-}
-NOMINAL_COLOR = "#111111"
+O_COLORS = pm.O_COLORS
+O_MARKERS = pm.O_MARKERS
+METHOD_COLORS = pm.METHOD_COLORS
+METHOD_LINESTYLES = pm.METHOD_LINESTYLES
+METHOD_MARKERS = pm.METHOD_MARKERS
+BASELINE_COLORS = pm.BASELINE_COLORS
+BASELINE_MARKERS = pm.BASELINE_MARKERS
+BASELINE_LINESTYLES = pm.BASELINE_LINESTYLES
+NOMINAL_COLOR = pm.NOMINAL_COLOR
+INK_COLOR = pm.INK_COLOR
 ALPHA_BASELINE_COMPARISON = 0.20
 # (method, o, x-axis label) for fixed-o baseline comparison panels.
 BASELINE_COMPARISON_SPECS: list[tuple[str, int, str]] = [
@@ -73,26 +67,26 @@ METHOD_COMPARISON_SPACING = 3.8
 METHOD_COMPARISON_BOX_WIDTH = 0.68
 WIDTH_AXIS_PADDING = 1.04
 
-# Paper-plot font controls.
-FONT_TICK = 30
-FONT_LABEL = 34
-FONT_TITLE = 36
-FONT_LEGEND = 34
-COVERAGE_YMARGIN_BELOW_NOMINAL = 0.15
-PLOT_BORDER_COLOR = "#c8c8c8"
-PLOT_BORDER_WIDTH = 0.9
-LINEWIDTH = 3.8
-MARKERSIZE = 10.0
-CAPSIZE = 6
-SE_VISUAL_MULTIPLIER = 2.0
-BOX_WIDTH_NOMINAL = 0.30
-BOX_WIDTH_O_AXIS = 1.9
-NOMINAL_BOX_GROUP_SPACING = 2.4
-WIDTH_AXIS_QUANTILE = 0.99
+FONT_TICK = pm.FONT_TICK
+FONT_LABEL = pm.FONT_LABEL
+FONT_TITLE = pm.FONT_TITLE
+FONT_LEGEND = pm.FONT_LEGEND
+FONT_METHODS_XLABEL = pm.FONT_METHODS_XLABEL
+COVERAGE_YMARGIN_BELOW_NOMINAL = pm.COVERAGE_YMARGIN_BELOW_NOMINAL
+PLOT_BORDER_COLOR = pm.PLOT_BORDER_COLOR
+PLOT_BORDER_WIDTH = pm.PLOT_BORDER_WIDTH
+LINEWIDTH = pm.LINEWIDTH
+MARKERSIZE = pm.MARKERSIZE
+CAPSIZE = pm.CAPSIZE
+SE_VISUAL_MULTIPLIER = pm.SE_VISUAL_MULTIPLIER
+BOX_WIDTH_NOMINAL = pm.BOX_WIDTH_NOMINAL
+BOX_WIDTH_O_AXIS = pm.BOX_WIDTH_O_AXIS
+NOMINAL_BOX_GROUP_SPACING = pm.NOMINAL_BOX_GROUP_SPACING
+WIDTH_AXIS_QUANTILE = pm.WIDTH_AXIS_QUANTILE
 
-X_LABEL_NOMINAL = r"Nominal coverage, $1-\alpha$"
-X_LABEL_TARGET_O = r"Target group size, $o$"
-Y_LABEL_WIDTH = "Prediction Set Width"
+X_LABEL_NOMINAL = pm.X_LABEL_NOMINAL
+X_LABEL_TARGET_O = pm.X_LABEL_TARGET_O
+Y_LABEL_WIDTH = pm.Y_LABEL_WIDTH
 
 
 def _alpha_from_dir(path: Path) -> float | None:
@@ -236,18 +230,11 @@ def _coverage_ylim_lower_from_nominals(nominal_values: list[float]) -> float:
 
 
 def _apply_plot_border(ax: plt.Axes) -> None:
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_linewidth(PLOT_BORDER_WIDTH)
-        spine.set_edgecolor(PLOT_BORDER_COLOR)
+    pm._apply_plot_border(ax)
 
 
 def _style_axis(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
-    ax.set_xlabel(xlabel, fontsize=FONT_LABEL)
-    ax.set_ylabel(ylabel, fontsize=FONT_LABEL)
-    ax.tick_params(axis="both", labelsize=FONT_TICK)
-    ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
-    _apply_plot_border(ax)
+    pm._style_axis(ax, xlabel, ylabel)
 
 
 def _set_nominal_ticks(ax: plt.Axes, nominal_values: list[float]) -> None:
@@ -256,10 +243,7 @@ def _set_nominal_ticks(ax: plt.Axes, nominal_values: list[float]) -> None:
 
 
 def _error_band(ax: plt.Axes, x: np.ndarray, y: np.ndarray, se: np.ndarray, color: str, alpha: float = 0.16) -> None:
-    finite = np.isfinite(y) & np.isfinite(se)
-    if np.any(finite):
-        band = SE_VISUAL_MULTIPLIER * se[finite]
-        ax.fill_between(x[finite], y[finite] - band, y[finite] + band, color=color, alpha=alpha, linewidth=0)
+    pm._error_band(ax, x, y, se, color, alpha=alpha)
 
 
 def _finite_width_array(series: pd.Series) -> np.ndarray:
@@ -335,11 +319,13 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
             y,
             yerr=SE_VISUAL_MULTIPLIER * se,
             linestyle="-",
-            marker="o",
+            marker=O_MARKERS.get(o, "o"),
             linewidth=LINEWIDTH,
             markersize=MARKERSIZE,
             capsize=CAPSIZE,
             color=O_COLORS[o],
+            markeredgecolor=INK_COLOR,
+            markeredgewidth=0.6,
             label=f"D-HCP, o={o}",
         )
 
@@ -352,15 +338,17 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
         x_hcp,
         y_hcp,
         yerr=SE_VISUAL_MULTIPLIER * se_hcp,
-        linestyle="-",
-        marker="s",
+        linestyle=METHOD_LINESTYLES["HCP"],
+        marker=METHOD_MARKERS["HCP"],
         linewidth=LINEWIDTH,
         markersize=MARKERSIZE,
         capsize=CAPSIZE,
         color=METHOD_COLORS["HCP"],
+        markeredgecolor=INK_COLOR,
+        markeredgewidth=0.6,
         label="HCP",
     )
-    ax_cov.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
+    ax_cov.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
     _style_axis(ax_cov, X_LABEL_NOMINAL, "Empirical coverage")
     _set_nominal_ticks(ax_cov, nominal_values)
     ax_cov.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
@@ -388,12 +376,12 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
                     widths=BOX_WIDTH_NOMINAL,
                     patch_artist=True,
                     showfliers=False,
-                    medianprops={"color": "#111111", "linewidth": 2.0},
-                    whiskerprops={"color": "#111111", "linewidth": 1.5},
-                    capprops={"color": "#111111", "linewidth": 1.5},
-                    boxprops={"facecolor": O_COLORS[o], "edgecolor": "#111111", "alpha": 0.82, "linewidth": 1.8},
+                    medianprops=pm._accessible_medianprops(),
+                    whiskerprops=pm._accessible_whiskerprops(INK_COLOR),
+                    capprops=pm._accessible_whiskerprops(INK_COLOR),
+                    boxprops=pm._accessible_boxprops(O_COLORS[o], alpha=0.82),
                 )
-                ax_width.scatter(x_pos, float(np.median(vals)), color="#111111", marker="D", s=34, zorder=4)
+                ax_width.scatter(x_pos, float(np.median(vals)), color=INK_COLOR, marker="D", s=34, zorder=4)
 
         vals_hcp = _finite_width_array(
             trials[(trials["method"] == "HCP") & (trials["o"] == 0) & np.isclose(trials["nominal_coverage"], nominal)][
@@ -408,10 +396,10 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
                 widths=BOX_WIDTH_NOMINAL,
                 patch_artist=True,
                 showfliers=False,
-                medianprops={"color": "#111111", "linewidth": 2.0},
-                whiskerprops={"color": "#111111", "linewidth": 1.5},
-                capprops={"color": "#111111", "linewidth": 1.5},
-                boxprops={"facecolor": METHOD_COLORS["HCP"], "edgecolor": "#111111", "alpha": 0.52, "linewidth": 1.8, "hatch": "///"},
+                medianprops=pm._accessible_medianprops(),
+                whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["HCP"]),
+                capprops=pm._accessible_whiskerprops(METHOD_COLORS["HCP"]),
+                boxprops=pm._accessible_boxprops(METHOD_COLORS["HCP"], hatch="///", alpha=0.52),
             )
 
     ax_width.set_xticks(positions)
@@ -424,10 +412,15 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     _style_axis(ax_width, X_LABEL_NOMINAL, Y_LABEL_WIDTH)
     ax_width.set_title("ACS Prediction Set Width", fontsize=FONT_TITLE, pad=12)
 
-    handles = [Line2D([0], [0], color=O_COLORS[o], marker="o", linestyle="-", linewidth=LINEWIDTH, label=f"D-HCP, o={o}") for o in NOMINAL_O_VALUES]
-    handles.append(Line2D([0], [0], color=METHOD_COLORS["HCP"], marker="s", linestyle="-", linewidth=LINEWIDTH, label="HCP"))
-    handles.append(Line2D([0], [0], color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal"))
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, fontsize=FONT_LEGEND)
+    handles = [
+        Line2D([0], [0], color=O_COLORS[o], marker=O_MARKERS.get(o, "o"), linestyle="-",
+               linewidth=LINEWIDTH, label=f"D-HCP, o={o}")
+        for o in NOMINAL_O_VALUES
+    ]
+    handles.append(Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
+                          linestyle=METHOD_LINESTYLES["HCP"], linewidth=LINEWIDTH, label="HCP"))
+    handles.append(Line2D([0], [0], color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal"))
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.10, 1, 1], h_pad=3.2)
     out = FIG_DIR / "acs_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
@@ -450,17 +443,37 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
             y = sub[metric].to_numpy(dtype=float)
             se = sub[se_col].fillna(0.0).to_numpy(dtype=float)
             _error_band(ax, x, y, se, O_COLORS[o], alpha=0.12)
-            ax.plot(x, y, marker="o", linestyle="-", linewidth=LINEWIDTH, markersize=MARKERSIZE, color=O_COLORS[o], label=f"D-HCP, o={o}")
+            ax.plot(
+                x, y,
+                marker=O_MARKERS.get(o, "o"),
+                linestyle="-",
+                linewidth=LINEWIDTH,
+                markersize=MARKERSIZE,
+                color=O_COLORS[o],
+                markeredgecolor=INK_COLOR,
+                markeredgewidth=0.6,
+                label=f"D-HCP, o={o}",
+            )
 
         hcp = _dedupe_hcp(summary).sort_values("nominal_coverage")
         x = hcp["nominal_coverage"].to_numpy(dtype=float)
         y = hcp[metric].to_numpy(dtype=float)
         se = hcp[se_col].fillna(0.0).to_numpy(dtype=float)
         _error_band(ax, x, y, se, METHOD_COLORS["HCP"], alpha=0.10)
-        ax.plot(x, y, marker="s", linestyle="-", linewidth=LINEWIDTH, markersize=MARKERSIZE, color=METHOD_COLORS["HCP"], label="HCP")
+        ax.plot(
+            x, y,
+            marker=METHOD_MARKERS["HCP"],
+            linestyle=METHOD_LINESTYLES["HCP"],
+            linewidth=LINEWIDTH,
+            markersize=MARKERSIZE,
+            color=METHOD_COLORS["HCP"],
+            markeredgecolor=INK_COLOR,
+            markeredgewidth=0.6,
+            label="HCP",
+        )
 
         if metric == "coverage_mean":
-            ax.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
+            ax.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
             ax.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
         else:
             width_upper = _managed_width_upper(summary[metric].to_numpy(dtype=float))
@@ -472,7 +485,7 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
         ax.set_title(title, fontsize=FONT_TITLE, pad=12)
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=len(handles), frameon=False, fontsize=FONT_LEGEND)
+    fig.legend(handles, labels, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.10, 1, 1], h_pad=3.2)
     out = FIG_DIR / "acs_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
@@ -502,11 +515,13 @@ def plot_alpha_o_axis_panel(
         dhcp["coverage_mean"],
         yerr=SE_VISUAL_MULTIPLIER * dhcp["coverage_se"].fillna(0.0),
         color=METHOD_COLORS["D-HCP"],
-        marker="o",
-        linestyle="-",
+        marker=METHOD_MARKERS["D-HCP"],
+        linestyle=METHOD_LINESTYLES["D-HCP"],
         linewidth=LINEWIDTH,
         markersize=MARKERSIZE,
         capsize=CAPSIZE,
+        markeredgecolor=INK_COLOR,
+        markeredgewidth=0.6,
         label="D-HCP",
     )
     if not hcp.empty:
@@ -515,9 +530,15 @@ def plot_alpha_o_axis_panel(
         x_hcp = np.asarray(o_values, dtype=float)
         y_hcp = np.repeat(hcp_cov, len(o_values))
         band = np.repeat(SE_VISUAL_MULTIPLIER * hcp_cov_se, len(o_values))
-        ax_cov.plot(x_hcp, y_hcp, color=METHOD_COLORS["HCP"], linestyle="-", linewidth=LINEWIDTH, label="HCP")
+        ax_cov.plot(
+            x_hcp, y_hcp,
+            color=METHOD_COLORS["HCP"],
+            linestyle=METHOD_LINESTYLES["HCP"],
+            linewidth=LINEWIDTH,
+            label="HCP",
+        )
         ax_cov.fill_between(x_hcp, y_hcp - band, y_hcp + band, color=METHOD_COLORS["HCP"], alpha=0.10, linewidth=0)
-    ax_cov.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
+    ax_cov.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
     ax_cov.set_xlim(min(o_values) - 0.75, max(o_values) + 0.75)
     ax_cov.set_ylim(_coverage_ylim_lower(alpha), 1.02)
     ax_cov.set_xticks(o_values)
@@ -535,10 +556,10 @@ def plot_alpha_o_axis_panel(
                 widths=BOX_WIDTH_O_AXIS,
                 patch_artist=True,
                 showfliers=False,
-                medianprops={"color": "#111111", "linewidth": 1.4},
-                whiskerprops={"color": METHOD_COLORS["D-HCP"], "linewidth": 1.1},
-                capprops={"color": METHOD_COLORS["D-HCP"], "linewidth": 1.1},
-                boxprops={"facecolor": METHOD_COLORS["D-HCP"], "edgecolor": METHOD_COLORS["D-HCP"], "alpha": 0.68, "linewidth": 1.0},
+                medianprops=pm._accessible_medianprops(),
+                whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
+                capprops=pm._accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
+                boxprops=pm._accessible_boxprops(METHOD_COLORS["D-HCP"], alpha=0.68),
             )
     hcp_pos = max(o_values) + 6
     vals_hcp = _finite_width_array(d_trials[(d_trials["method"] == "HCP") & (d_trials["o"] == 0)]["width_income"])
@@ -550,10 +571,10 @@ def plot_alpha_o_axis_panel(
             widths=BOX_WIDTH_O_AXIS,
             patch_artist=True,
             showfliers=False,
-            medianprops={"color": "#111111", "linewidth": 1.4},
-            whiskerprops={"color": METHOD_COLORS["HCP"], "linewidth": 1.1},
-            capprops={"color": METHOD_COLORS["HCP"], "linewidth": 1.1},
-            boxprops={"facecolor": METHOD_COLORS["HCP"], "edgecolor": METHOD_COLORS["HCP"], "alpha": 0.45, "linewidth": 1.0, "hatch": "///"},
+            medianprops=pm._accessible_medianprops(),
+            whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["HCP"]),
+            capprops=pm._accessible_whiskerprops(METHOD_COLORS["HCP"]),
+            boxprops=pm._accessible_boxprops(METHOD_COLORS["HCP"], hatch="///", alpha=0.50),
         )
     ax_width.set_xticks([*o_values, hcp_pos])
     ax_width.set_xticklabels([*(str(o) for o in o_values), "HCP"])
@@ -565,11 +586,13 @@ def plot_alpha_o_axis_panel(
     ax_width.set_title(Y_LABEL_WIDTH, fontsize=FONT_TITLE, pad=12)
 
     handles = [
-        Line2D([0], [0], color=METHOD_COLORS["D-HCP"], marker="o", linestyle="-", linewidth=LINEWIDTH, label="D-HCP"),
-        Line2D([0], [0], color=METHOD_COLORS["HCP"], linestyle="-", linewidth=LINEWIDTH, label="HCP"),
-        Line2D([0], [0], color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal"),
+        Line2D([0], [0], color=METHOD_COLORS["D-HCP"], marker=METHOD_MARKERS["D-HCP"],
+               linestyle=METHOD_LINESTYLES["D-HCP"], linewidth=LINEWIDTH, label="D-HCP"),
+        Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
+               linestyle=METHOD_LINESTYLES["HCP"], linewidth=LINEWIDTH, label="HCP"),
+        Line2D([0], [0], color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal"),
     ]
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, fontsize=FONT_LEGEND)
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.15, 1, 1], w_pad=3.0)
     out = FIG_DIR / f"acs_alpha{_plot_tag(alpha)}_coverage_width_by_o{out_suffix}.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)

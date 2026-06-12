@@ -332,13 +332,9 @@ def _apply_plot_border(ax: plt.Axes) -> None:
 
 
 def _legend_kwargs(**overrides) -> dict:
-    """Framed legend defaults for readability on slides and print."""
+    """Legend defaults shared across paper figures."""
     kw = {
-        "frameon": True,
-        "fancybox": False,
-        "edgecolor": "#333333",
-        "facecolor": "white",
-        "framealpha": 0.96,
+        "frameon": False,
         "fontsize": FONT_LEGEND,
     }
     kw.update(overrides)
