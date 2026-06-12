@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -20,15 +22,26 @@ from matplotlib.ticker import FuncFormatter
 SCRIPT_PATH = Path(__file__).resolve()
 REAL_DATA_DIR = SCRIPT_PATH.parent.parent
 REPO_ROOT = REAL_DATA_DIR.parent
-RESULTS_ROOT = REAL_DATA_DIR / "acs" / "results"
-PAPER_ROOT = REPO_ROOT / "paper_plots" / "acs"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+_pm_path = REPO_ROOT / "code" / "shared" / "plot_engine.py"
+_pm_spec = importlib.util.spec_from_file_location("plot_true_marginal_alpha_grid", _pm_path)
+pm = importlib.util.module_from_spec(_pm_spec)
+assert _pm_spec.loader is not None
+_pm_spec.loader.exec_module(pm)
+RESULTS_ROOT = REPO_ROOT / "results_marginal" / "acs"
+PAPER_ROOT = REPO_ROOT / "plots_marginal" / "acs"
 FIG_DIR = PAPER_ROOT / "figures"
 SUMMARY_DIR = PAPER_ROOT / "summaries"
 
 PERMUTED_PREFIX = "true_marginal_permuted_alpha"
+PERMUTED_T35_PREFIX = "true_marginal_permuted_t35_alpha"
 O_VALUES = [0, 5, 10, 15, 20]
+O_VALUES_UPTO35 = [0, 5, 10, 15, 20, 25, 30, 35]
 NOMINAL_O_VALUES = [0, 10, 20]
 ALPHA_PANEL_VALUES = [0.05, 0.10, 0.20]
+UPTO35_ALPHA_VALUES = [0.10, 0.20]
 NOMINAL_COVERAGE_MAX = 0.90
 
 O_COLORS = {
@@ -41,14 +54,33 @@ O_COLORS = {
 METHOD_COLORS = {
     "D-HCP": "#005A8C",
     "HCP": "#8E44AD",
+    "Pooling": "#009E73",
+    "Subsampling": "#E69F00",
+    "Repeated": "#56B4E9",
+    "Std-CP": "#D55E00",
 }
 NOMINAL_COLOR = "#111111"
+ALPHA_BASELINE_COMPARISON = 0.20
+# (method, o, x-axis label) for fixed-o baseline comparison panels.
+BASELINE_COMPARISON_SPECS: list[tuple[str, int, str]] = [
+    ("D-HCP", 20, "D-HCP\n($o=20$)"),
+    ("HCP", 0, "HCP"),
+    ("Pooling", 0, "Pooling"),
+    ("Subsampling", 0, "Subsampling"),
+    ("Repeated", 0, "Repeated\nSubsampling"),
+]
+METHOD_COMPARISON_SPACING = 3.8
+METHOD_COMPARISON_BOX_WIDTH = 0.68
+WIDTH_AXIS_PADDING = 1.04
 
 # Paper-plot font controls.
 FONT_TICK = 30
 FONT_LABEL = 34
 FONT_TITLE = 36
-FONT_LEGEND = 30
+FONT_LEGEND = 34
+COVERAGE_YMARGIN_BELOW_NOMINAL = 0.15
+PLOT_BORDER_COLOR = "#c8c8c8"
+PLOT_BORDER_WIDTH = 0.9
 LINEWIDTH = 3.8
 MARKERSIZE = 10.0
 CAPSIZE = 6
@@ -97,30 +129,54 @@ def reset_output_dirs() -> None:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _detailed_files() -> list[tuple[float, Path]]:
-    out: list[tuple[float, Path]] = []
-    for result_dir in sorted(RESULTS_ROOT.glob(f"{PERMUTED_PREFIX}*")):
+def ensure_output_dirs() -> None:
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _detailed_files(*, result_glob: str = "true_marginal_permuted_alpha*") -> list[tuple[float, Path]]:
+    """Load ACS detailed CSVs; prefer permuted runs when both exist for an alpha.
+
+    Row permutation within each PUMA is required for the fixed target index design:
+    without it, indices 0..o-1 are not exchangeable with the target at index 20, and
+    coverage collapses as o grows.
+    """
+    by_alpha: dict[float, Path] = {}
+    for result_dir in sorted(RESULTS_ROOT.glob("true_marginal_alpha*")):
+        if "permuted" in result_dir.name:
+            continue
+        alpha = _alpha_from_dir(result_dir)
+        if alpha is None:
+            continue
+        details = sorted(result_dir.glob("acs_true_marg_alpha*_detailed.csv"))
+        if details and alpha not in by_alpha:
+            by_alpha[alpha] = details[0]
+    for result_dir in sorted(RESULTS_ROOT.glob(result_glob)):
         alpha = _alpha_from_dir(result_dir)
         if alpha is None:
             continue
         details = sorted(result_dir.glob("acs_true_marg_alpha*_detailed.csv"))
         if details:
-            out.append((alpha, details[0]))
-    if not out:
-        raise FileNotFoundError(f"No permuted ACS detailed files found under {RESULTS_ROOT}")
-    return out
+            by_alpha[alpha] = details[0]
+    if not by_alpha:
+        raise FileNotFoundError(
+            f"No ACS detailed files found under {RESULTS_ROOT} "
+            f"(expected {result_glob})"
+        )
+    return [(alpha, by_alpha[alpha]) for alpha in sorted(by_alpha)]
 
 
-def load_trials() -> pd.DataFrame:
+def load_trials(*, result_glob: str = "true_marginal_permuted_alpha*") -> pd.DataFrame:
     pieces = []
-    for alpha, path in _detailed_files():
+    for alpha, path in _detailed_files(result_glob=result_glob):
         df = pd.read_csv(path)
-        df = df[["replicate", "method", "o", "coverage", "width_income"]].copy()
+        df = df[["replicate", "method", "o", "coverage", "width", "width_income"]].copy()
         df["alpha"] = alpha
         df["nominal_coverage"] = 1.0 - alpha
         df["o"] = df["o"].astype(int)
         df["method"] = df["method"].replace({"Donor-HCP": "D-HCP"})
         df["coverage"] = pd.to_numeric(df["coverage"], errors="coerce")
+        df["width"] = pd.to_numeric(df["width"], errors="coerce")
         df["width_income"] = pd.to_numeric(df["width_income"], errors="coerce")
         pieces.append(df)
     return pd.concat(pieces, ignore_index=True).sort_values(["alpha", "method", "o", "replicate"])
@@ -169,13 +225,29 @@ def summarize_trials(trials: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["alpha", "method", "o"]).reset_index(drop=True)
 
 
+def _coverage_ylim_lower(alpha: float) -> float:
+    return max(0.0, 1.0 - float(alpha) - COVERAGE_YMARGIN_BELOW_NOMINAL)
+
+
+def _coverage_ylim_lower_from_nominals(nominal_values: list[float]) -> float:
+    if not nominal_values:
+        return 0.0
+    return max(0.0, min(float(v) for v in nominal_values) - COVERAGE_YMARGIN_BELOW_NOMINAL)
+
+
+def _apply_plot_border(ax: plt.Axes) -> None:
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(PLOT_BORDER_WIDTH)
+        spine.set_edgecolor(PLOT_BORDER_COLOR)
+
+
 def _style_axis(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
     ax.set_xlabel(xlabel, fontsize=FONT_LABEL)
     ax.set_ylabel(ylabel, fontsize=FONT_LABEL)
     ax.tick_params(axis="both", labelsize=FONT_TICK)
     ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
+    _apply_plot_border(ax)
 
 
 def _set_nominal_ticks(ax: plt.Axes, nominal_values: list[float]) -> None:
@@ -194,13 +266,45 @@ def _finite_width_array(series: pd.Series) -> np.ndarray:
     return series.replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
 
 
-def _managed_width_upper(values: list[float] | np.ndarray, quantile: float = WIDTH_AXIS_QUANTILE) -> float | None:
+def _managed_width_upper(
+    values: list[float] | np.ndarray,
+    quantile: float = WIDTH_AXIS_QUANTILE,
+    *,
+    include_all: bool = False,
+) -> float | None:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
     if finite.size == 0:
         return None
-    upper = float(np.quantile(finite, quantile)) if quantile < 1.0 else float(np.max(finite))
-    return upper * 1.03
+    if include_all or quantile >= 1.0:
+        upper = float(np.max(finite))
+    else:
+        upper = float(np.quantile(finite, quantile))
+    return upper * WIDTH_AXIS_PADDING
+
+
+def _boxplot_whisker_upper(values: list[float] | np.ndarray, whis: float = 1.5) -> float | None:
+    """Upper whisker cap for matplotlib's default 1.5*IQR boxplots."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return None
+    q1, q3 = np.quantile(finite, [0.25, 0.75])
+    iqr = q3 - q1
+    return float(min(np.max(finite), q3 + whis * iqr))
+
+
+def _width_axis_upper_from_box_groups(
+    box_groups: list[np.ndarray],
+    *,
+    padding: float = WIDTH_AXIS_PADDING,
+) -> float | None:
+    """Y-axis cap from visible boxplot whiskers (showfliers=False), not raw outliers."""
+    uppers = [_boxplot_whisker_upper(group) for group in box_groups if len(group)]
+    uppers = [u for u in uppers if u is not None]
+    if not uppers:
+        return None
+    return max(uppers) * padding
 
 
 def _filter_nominal(df: pd.DataFrame) -> pd.DataFrame:
@@ -259,14 +363,13 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     ax_cov.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
     _style_axis(ax_cov, X_LABEL_NOMINAL, "Empirical coverage")
     _set_nominal_ticks(ax_cov, nominal_values)
-    y_min = min(0.70, float(summary["coverage_mean"].min()) - 0.04)
-    ax_cov.set_ylim(max(0.0, y_min), 1.02)
+    ax_cov.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
     ax_cov.set_title("ACS Coverage", fontsize=FONT_TITLE, pad=12)
 
     positions = np.arange(len(nominal_values), dtype=float) * NOMINAL_BOX_GROUP_SPACING
     n_box_series = len(NOMINAL_O_VALUES) + 1
     offsets = (np.arange(n_box_series, dtype=float) - (n_box_series - 1) / 2.0) * BOX_WIDTH_NOMINAL * 2.05
-    width_values_for_axis: list[float] = []
+    width_box_groups: list[np.ndarray] = []
     for nominal_idx, nominal in enumerate(nominal_values):
         for o_idx, o in enumerate(NOMINAL_O_VALUES):
             vals = _finite_width_array(
@@ -277,7 +380,7 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
                 ]["width_income"]
             )
             if len(vals):
-                width_values_for_axis.extend(vals.tolist())
+                width_box_groups.append(vals)
                 x_pos = positions[nominal_idx] + offsets[o_idx]
                 ax_width.boxplot(
                     [vals],
@@ -298,7 +401,7 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
             ]
         )
         if len(vals_hcp):
-            width_values_for_axis.extend(vals_hcp.tolist())
+            width_box_groups.append(vals_hcp)
             ax_width.boxplot(
                 [vals_hcp],
                 positions=[positions[nominal_idx] + offsets[-1]],
@@ -314,7 +417,7 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     ax_width.set_xticks(positions)
     ax_width.set_xticklabels([_nominal_label(nominal) for nominal in nominal_values], rotation=35, ha="right")
     ax_width.set_xlim(positions[0] + offsets[0] - 0.5, positions[-1] + offsets[-1] + 0.5)
-    width_upper = _managed_width_upper(width_values_for_axis, quantile=1.0)
+    width_upper = _width_axis_upper_from_box_groups(width_box_groups)
     if width_upper is not None:
         ax_width.set_ylim(0.0, width_upper)
     ax_width.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
@@ -358,7 +461,7 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
 
         if metric == "coverage_mean":
             ax.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
-            ax.set_ylim(max(0.0, min(0.70, float(summary["coverage_mean"].min()) - 0.04)), 1.02)
+            ax.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
         else:
             width_upper = _managed_width_upper(summary[metric].to_numpy(dtype=float))
             if width_upper is not None:
@@ -377,14 +480,22 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
     return out
 
 
-def plot_alpha_o_axis_panel(trials: pd.DataFrame, summary: pd.DataFrame, alpha: float) -> Path:
+def plot_alpha_o_axis_panel(
+    trials: pd.DataFrame,
+    summary: pd.DataFrame,
+    alpha: float,
+    o_values: list[int] = O_VALUES,
+    out_suffix: str = "",
+) -> Path:
     d_trials = trials[np.isclose(trials["alpha"], alpha)].copy()
     d_summary = summary[np.isclose(summary["alpha"], alpha)].copy()
     fig, axes = plt.subplots(1, 2, figsize=(24.0, 8.8))
     ax_cov, ax_width = axes
 
-    dhcp = d_summary[(d_summary["method"] == "D-HCP") & (d_summary["o"].isin(O_VALUES))].sort_values("o")
+    dhcp = d_summary[(d_summary["method"] == "D-HCP") & (d_summary["o"].isin(o_values))].sort_values("o")
     hcp = d_summary[(d_summary["method"] == "HCP") & (d_summary["o"] == 0)]
+    if dhcp.empty or hcp.empty:
+        raise ValueError(f"Missing D-HCP or HCP rows for alpha={alpha}, o_values={o_values}")
     _error_band(ax_cov, dhcp["o"].to_numpy(dtype=float), dhcp["coverage_mean"].to_numpy(dtype=float), dhcp["coverage_se"].fillna(0.0).to_numpy(dtype=float), METHOD_COLORS["D-HCP"], alpha=0.10)
     ax_cov.errorbar(
         dhcp["o"],
@@ -401,54 +512,52 @@ def plot_alpha_o_axis_panel(trials: pd.DataFrame, summary: pd.DataFrame, alpha: 
     if not hcp.empty:
         hcp_cov = float(hcp["coverage_mean"].iloc[0])
         hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
-        x_hcp = np.asarray(O_VALUES, dtype=float)
-        y_hcp = np.repeat(hcp_cov, len(O_VALUES))
-        band = np.repeat(SE_VISUAL_MULTIPLIER * hcp_cov_se, len(O_VALUES))
+        x_hcp = np.asarray(o_values, dtype=float)
+        y_hcp = np.repeat(hcp_cov, len(o_values))
+        band = np.repeat(SE_VISUAL_MULTIPLIER * hcp_cov_se, len(o_values))
         ax_cov.plot(x_hcp, y_hcp, color=METHOD_COLORS["HCP"], linestyle="-", linewidth=LINEWIDTH, label="HCP")
         ax_cov.fill_between(x_hcp, y_hcp - band, y_hcp + band, color=METHOD_COLORS["HCP"], alpha=0.10, linewidth=0)
     ax_cov.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle="--", linewidth=2.0, label="Nominal")
-    ax_cov.set_xlim(min(O_VALUES) - 0.75, max(O_VALUES) + 0.75)
-    ax_cov.set_ylim(0.70, 1.02)
-    ax_cov.set_xticks(O_VALUES)
+    ax_cov.set_xlim(min(o_values) - 0.75, max(o_values) + 0.75)
+    ax_cov.set_ylim(_coverage_ylim_lower(alpha), 1.02)
+    ax_cov.set_xticks(o_values)
     _style_axis(ax_cov, X_LABEL_TARGET_O, "Empirical coverage")
     ax_cov.set_title("Coverage", fontsize=FONT_TITLE, pad=12)
 
-    width_values_for_axis: list[float] = []
-    for o in O_VALUES:
+    width_box_groups: list[np.ndarray] = []
+    for o in o_values:
         vals = _finite_width_array(d_trials[(d_trials["method"] == "D-HCP") & (d_trials["o"] == o)]["width_income"])
         if len(vals):
-            width_values_for_axis.extend(vals.tolist())
+            width_box_groups.append(vals)
             ax_width.boxplot(
                 [vals],
                 positions=[o],
                 widths=BOX_WIDTH_O_AXIS,
                 patch_artist=True,
                 showfliers=False,
-                whis=(0, 100),
                 medianprops={"color": "#111111", "linewidth": 1.4},
                 whiskerprops={"color": METHOD_COLORS["D-HCP"], "linewidth": 1.1},
                 capprops={"color": METHOD_COLORS["D-HCP"], "linewidth": 1.1},
                 boxprops={"facecolor": METHOD_COLORS["D-HCP"], "edgecolor": METHOD_COLORS["D-HCP"], "alpha": 0.68, "linewidth": 1.0},
             )
-    hcp_pos = max(O_VALUES) + 6
+    hcp_pos = max(o_values) + 6
     vals_hcp = _finite_width_array(d_trials[(d_trials["method"] == "HCP") & (d_trials["o"] == 0)]["width_income"])
     if len(vals_hcp):
-        width_values_for_axis.extend(vals_hcp.tolist())
+        width_box_groups.append(vals_hcp)
         ax_width.boxplot(
             [vals_hcp],
             positions=[hcp_pos],
             widths=BOX_WIDTH_O_AXIS,
             patch_artist=True,
             showfliers=False,
-            whis=(0, 100),
             medianprops={"color": "#111111", "linewidth": 1.4},
             whiskerprops={"color": METHOD_COLORS["HCP"], "linewidth": 1.1},
             capprops={"color": METHOD_COLORS["HCP"], "linewidth": 1.1},
             boxprops={"facecolor": METHOD_COLORS["HCP"], "edgecolor": METHOD_COLORS["HCP"], "alpha": 0.45, "linewidth": 1.0, "hatch": "///"},
         )
-    ax_width.set_xticks([*O_VALUES, hcp_pos])
-    ax_width.set_xticklabels([*(str(o) for o in O_VALUES), "HCP"])
-    width_upper = _managed_width_upper(width_values_for_axis, quantile=1.0)
+    ax_width.set_xticks([*o_values, hcp_pos])
+    ax_width.set_xticklabels([*(str(o) for o in o_values), "HCP"])
+    width_upper = _width_axis_upper_from_box_groups(width_box_groups)
     if width_upper is not None:
         ax_width.set_ylim(0.0, width_upper)
     ax_width.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
@@ -462,10 +571,34 @@ def plot_alpha_o_axis_panel(trials: pd.DataFrame, summary: pd.DataFrame, alpha: 
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, fontsize=FONT_LEGEND)
     fig.tight_layout(rect=[0, 0.15, 1, 1], w_pad=3.0)
-    out = FIG_DIR / f"acs_alpha{_plot_tag(alpha)}_coverage_width_by_o.pdf"
+    out = FIG_DIR / f"acs_alpha{_plot_tag(alpha)}_coverage_width_by_o{out_suffix}.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
     plt.close(fig)
     return out
+
+
+def plot_all_baselines_by_o(
+    trials: pd.DataFrame,
+    summary: pd.DataFrame,
+    alpha: float,
+    o_values: list[int] | None = None,
+) -> list[Path]:
+    o_values = O_VALUES if o_values is None else o_values
+    saved_fig_dir = pm.FIG_DIR
+    pm.FIG_DIR = FIG_DIR
+    try:
+        return pm.plot_all_baselines_by_o(
+            trials,
+            summary,
+            alpha,
+            o_values,
+            file_prefix="acs",
+            title_prefix="ACS",
+            width_col="width_income",
+            y_formatter=FuncFormatter(_currency_formatter),
+        )
+    finally:
+        pm.FIG_DIR = saved_fig_dir
 
 
 def write_summaries(trials: pd.DataFrame, summary: pd.DataFrame) -> list[Path]:
@@ -503,7 +636,7 @@ def write_summaries(trials: pd.DataFrame, summary: pd.DataFrame) -> list[Path]:
 
 
 def main() -> None:
-    reset_output_dirs()
+    ensure_output_dirs()
     print("Loading ACS true marginal detailed results...")
     trials = load_trials()
     summary = summarize_trials(trials)
@@ -514,6 +647,24 @@ def main() -> None:
     ]
     for alpha in ALPHA_PANEL_VALUES:
         outputs.append(plot_alpha_o_axis_panel(trials, summary, alpha))
+        outputs.extend(plot_all_baselines_by_o(trials, summary, alpha))
+
+    try:
+        trials_upto35 = load_trials(result_glob=f"{PERMUTED_T35_PREFIX}*")
+        summary_upto35 = summarize_trials(trials_upto35)
+        for alpha in UPTO35_ALPHA_VALUES:
+            outputs.append(
+                plot_alpha_o_axis_panel(
+                    trials_upto35,
+                    summary_upto35,
+                    alpha,
+                    o_values=O_VALUES_UPTO35,
+                    out_suffix="_upto35",
+                )
+            )
+        print("Loaded target-index-35 ACS results for o up to 35 plots.")
+    except FileNotFoundError as exc:
+        print(f"Skipping o-up-to-35 ACS panels ({exc}).")
 
     print("Saved summaries:")
     for path in summary_paths:

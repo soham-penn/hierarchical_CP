@@ -12,10 +12,30 @@ import numpy as np
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from scores import weighted_quantile
+from scores import conformal_threshold
 
 
-def compute_hcp_interval_radius(scores_list, alpha):
+def _threshold_from_scores(scores, weights, alpha, quantile_mode="deterministic",
+                           random_seed=None, rng=None, return_info=False):
+    return conformal_threshold(
+        scores=scores,
+        weights=weights,
+        alpha=alpha,
+        quantile_mode=quantile_mode,
+        random_seed=random_seed,
+        rng=rng,
+        return_info=return_info,
+    )
+
+
+def compute_hcp_interval_radius(
+    scores_list,
+    alpha,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    return_info=False,
+):
     """
     Compute the HCP interval radius.
 
@@ -28,15 +48,23 @@ def compute_hcp_interval_radius(scores_list, alpha):
         Conformity scores per calibration group.
     alpha : float
         Miscoverage level; returns the (1-alpha)-quantile.
+    quantile_mode : {"deterministic", "randomized"}
+        How to choose the conformal threshold from weighted scores.
+    random_seed, rng : optional
+        Randomness for randomized threshold selection only.
+    return_info : bool
+        If True, return a dict with threshold diagnostics.
 
     Returns
     -------
-    float
-        Interval radius (may be inf if scores_list is empty).
+    float or dict
+        Interval radius (may be inf if scores_list is empty), or info dict.
     """
     K = len(scores_list)
     if K == 0:
-        return np.inf
+        out = _threshold_from_scores([], [], alpha, quantile_mode=quantile_mode,
+                                    random_seed=random_seed, rng=rng, return_info=True)
+        return out if return_info else out["q_randomized"]
 
     all_scores, all_weights = [], []
     for scores in scores_list:
@@ -48,10 +76,23 @@ def compute_hcp_interval_radius(scores_list, alpha):
     all_scores.append(np.inf)
     all_weights.append(1.0 / (K + 1))
 
-    return weighted_quantile(all_scores, all_weights, alpha)
+    return _threshold_from_scores(
+        all_scores, all_weights, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=random_seed,
+        rng=rng,
+        return_info=return_info,
+    )
 
 
-def compute_pooling_interval_radius(scores_list, alpha):
+def compute_pooling_interval_radius(
+    scores_list,
+    alpha,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    return_info=False,
+):
     """
     Compute the Pooling interval radius.
 
@@ -64,15 +105,20 @@ def compute_pooling_interval_radius(scores_list, alpha):
         Conformity scores per calibration group.
     alpha : float
         Miscoverage level; returns the (1-alpha)-quantile.
+    quantile_mode : {"deterministic", "randomized"}
+    random_seed, rng : optional
+    return_info : bool
 
     Returns
     -------
-    float
-        Interval radius (inf if no scores).
+    float or dict
+        Interval radius (inf if no scores), or info dict.
     """
     K = len(scores_list)
     if K == 0:
-        return np.inf
+        out = _threshold_from_scores([], [], alpha, quantile_mode=quantile_mode,
+                                    random_seed=random_seed, rng=rng, return_info=True)
+        return out if return_info else out["q_randomized"]
 
     all_scores, all_weights = [], []
     for scores in scores_list:
@@ -82,12 +128,27 @@ def compute_pooling_interval_radius(scores_list, alpha):
             all_weights.extend([1.0 / (K * n)] * n)
 
     if not all_scores:
-        return np.inf
+        out = _threshold_from_scores([], [], alpha, quantile_mode=quantile_mode,
+                                    random_seed=random_seed, rng=rng, return_info=True)
+        return out if return_info else out["q_randomized"]
 
-    return weighted_quantile(all_scores, all_weights, alpha)
+    return _threshold_from_scores(
+        all_scores, all_weights, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=random_seed,
+        rng=rng,
+        return_info=return_info,
+    )
 
 
-def compute_subsampling_once_interval_radius(scores_list, alpha):
+def compute_subsampling_once_interval_radius(
+    scores_list,
+    alpha,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    return_info=False,
+):
     """
     Compute the Subsampling (once) interval radius.
 
@@ -100,24 +161,44 @@ def compute_subsampling_once_interval_radius(scores_list, alpha):
         Conformity scores per calibration group.
     alpha : float
         Miscoverage level; returns the (1-alpha)-quantile.
+    quantile_mode : {"deterministic", "randomized"}
+    random_seed, rng : optional
+        ``rng`` is also used for per-group score subsampling when provided.
+    return_info : bool
 
     Returns
     -------
-    float
+    float or dict
         Interval radius.
     """
     K = len(scores_list)
     if K == 0:
-        return np.inf
+        out = _threshold_from_scores([], [], alpha, quantile_mode=quantile_mode,
+                                    random_seed=random_seed, rng=rng, return_info=True)
+        return out if return_info else out["q_randomized"]
 
-    sampled = [np.random.choice(s) for s in scores_list if len(s) > 0]
+    sample_rng = _resolve_sample_rng(rng, random_seed)
+    sampled = [sample_rng.choice(s) for s in scores_list if len(s) > 0]
     sampled.append(np.inf)
     weights = np.ones(len(sampled)) / (K + 1)
-    return weighted_quantile(sampled, weights, alpha)
+    return _threshold_from_scores(
+        sampled, weights, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=random_seed,
+        rng=rng,
+        return_info=return_info,
+    )
 
 
-def compute_repeated_subsampling_interval_radius(scores_list, alpha,
-                                                 number_repetitions):
+def compute_repeated_subsampling_interval_radius(
+    scores_list,
+    alpha,
+    number_repetitions,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    return_info=False,
+):
     """
     Compute the Repeated Subsampling interval radius.
 
@@ -134,21 +215,57 @@ def compute_repeated_subsampling_interval_radius(scores_list, alpha,
         Miscoverage level; returns the (1-alpha)-quantile.
     number_repetitions : int
         Number of independent subsampling draws to average over.
+    quantile_mode : {"deterministic", "randomized"}
+    random_seed, rng : optional
+    return_info : bool
 
     Returns
     -------
-    float
-        Interval radius.
+    float or dict
+        Interval radius (mean quantile; info dict summarizes last draw only).
     """
     K = len(scores_list)
     if K == 0 or number_repetitions <= 0:
-        return np.inf
+        out = _threshold_from_scores([], [], alpha, quantile_mode=quantile_mode,
+                                    random_seed=random_seed, rng=rng, return_info=True)
+        return out if return_info else out["q_randomized"]
 
+    sample_rng = _resolve_sample_rng(rng, random_seed)
     quantiles = []
-    for _ in range(number_repetitions):
-        sampled = [np.random.choice(s) for s in scores_list if len(s) > 0]
+    last_info = None
+    for rep in range(number_repetitions):
+        sampled = [sample_rng.choice(s) for s in scores_list if len(s) > 0]
         sampled.append(np.inf)
         w = np.ones(len(sampled)) / (K + 1)
-        quantiles.append(weighted_quantile(sampled, w, alpha))
+        q_seed = None if random_seed is None else int(random_seed) + 1009 * rep
+        q_out = _threshold_from_scores(
+            sampled, w, alpha,
+            quantile_mode=quantile_mode,
+            random_seed=q_seed,
+            rng=rng,
+            return_info=return_info,
+        )
+        if return_info:
+            quantiles.append(q_out["q_randomized"])
+            last_info = q_out
+        else:
+            quantiles.append(q_out)
 
-    return float(np.mean(quantiles))
+    mean_q = float(np.mean(quantiles))
+    if not return_info:
+        return mean_q
+
+    if last_info is None:
+        last_info = {}
+    last_info = dict(last_info)
+    last_info["q_randomized"] = mean_q
+    last_info["repeated_subsampling_mean"] = True
+    return last_info
+
+
+def _resolve_sample_rng(rng, random_seed):
+    if rng is not None:
+        return rng
+    if random_seed is not None:
+        return np.random.default_rng(random_seed)
+    return np.random.default_rng()

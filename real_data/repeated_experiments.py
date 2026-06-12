@@ -76,7 +76,7 @@ from methods.baseline_hcp import (
     compute_subsampling_once_interval_radius,
     compute_repeated_subsampling_interval_radius,
 )
-from scores import absolute_residual_score
+from scores import absolute_residual_score, conformal_threshold, make_quantile_seed
 
 # Methods that vary with o vs baselines (constant in o)
 HCP_METHODS      = [
@@ -193,19 +193,31 @@ def _nanstd_no_warning(values):
     return np.nanstd(arr)
 
 
-def _split_conformal_radius(abs_residuals, alpha):
+def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
+                            random_seed=None, rng=None):
     """Finite-sample split-conformal radius from calibration residuals."""
     scores = np.asarray(abs_residuals, dtype=float)
     scores = scores[np.isfinite(scores)]
     n = len(scores)
     if n == 0:
         return np.inf
+    if quantile_mode == "randomized":
+        return conformal_threshold(
+            scores=scores,
+            weights=None,
+            alpha=alpha,
+            quantile_mode="randomized",
+            random_seed=random_seed,
+            rng=rng,
+            return_info=False,
+        )
     k = int(np.ceil((n + 1) * (1 - alpha)))
     k = min(max(1, k), n)
     return float(np.partition(scores, k - 1)[k - 1])
 
 
-def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng):
+def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng,
+                             quantile_mode="deterministic", quantile_random_seed=None):
     """Standard split CP within one target group using its observed history."""
     x_hist = np.asarray(x_hist, dtype=float)
     y_hist = np.asarray(y_hist, dtype=float)
@@ -232,7 +244,13 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng):
 
     beta, *_ = np.linalg.lstsq(x_train_aug, y_train, rcond=None)
     y_cal_pred = x_cal_aug @ beta
-    radius = _split_conformal_radius(np.abs(y_cal - y_cal_pred), alpha)
+    radius = _split_conformal_radius(
+        np.abs(y_cal - y_cal_pred),
+        alpha,
+        quantile_mode=quantile_mode,
+        random_seed=quantile_random_seed,
+        rng=rng,
+    )
 
     x_target = np.asarray(x_target, dtype=float).reshape(1, -1)
     x_target_aug = np.column_stack([np.ones(1), x_target])
@@ -255,6 +273,8 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
     alpha     = config['alpha']
     alpha_sel = config.get('alpha_selection', 0.5)
     n_rep     = config.get('n_repeated', 50)
+    quantile_mode = config.get('quantile_mode', 'deterministic')
+    quantile_base_seed = config.get('quantile_base_seed', config['seed'])
 
     # ------------------------------------------------------------------
     # 1. Bootstrap each group's observations for this replicate.
@@ -318,10 +338,26 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
         ])
         scores_list.append(absolute_residual_score(yj, muj))
 
-    T_hcp  = compute_hcp_interval_radius(scores_list, alpha)
-    T_pool = compute_pooling_interval_radius(scores_list, alpha)
-    T_sub  = compute_subsampling_once_interval_radius(scores_list, alpha)
-    T_rep  = compute_repeated_subsampling_interval_radius(scores_list, alpha, n_rep)
+    T_hcp = compute_hcp_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, b, 0, 0, "hcp"),
+    )
+    T_pool = compute_pooling_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, b, 0, 0, "pool"),
+    )
+    T_sub = compute_subsampling_once_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, b, 0, 0, "sub"),
+    )
+    T_rep = compute_repeated_subsampling_interval_radius(
+        scores_list, alpha, n_rep,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, b, 0, 0, "rep"),
+    )
 
     U_test = np.zeros((1, 1))
 
@@ -395,6 +431,10 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
                     o_observed=o, alpha=alpha,
                     alpha_selection=alpha_sel,
                     mu_method=mu_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, b, o, o, "donor_hcp"
+                    ),
                 )
                 int_pp = res_pp['interval']
             except Exception:
@@ -409,6 +449,10 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
                     o_observed=o, alpha=alpha,
                     alpha_selection=alpha_sel,
                     mu_method=mu_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, b, o, o, "donor_hcp_derand"
+                    ),
                 )
                 int_dd = res_dd['interval']
             except Exception:
@@ -423,6 +467,10 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
                     o_observed=o, alpha=alpha,
                     alpha_selection=alpha_sel,
                     mu_method=mu_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, b, o, o, "sample_hcp"
+                    ),
                 )
                 int_hs = res_hs['interval']
             except Exception:
@@ -437,6 +485,10 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
                     o_observed=o, alpha=alpha,
                     alpha_selection=alpha_sel,
                     mu_method=mu_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, b, o, o, "sample_hcp_derand"
+                    ),
                 )
                 int_sd = res_sd['interval']
             except Exception:
@@ -459,6 +511,10 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
                 x_target=x_target,
                 alpha=alpha,
                 rng=rng,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=make_quantile_seed(
+                    quantile_base_seed, b, o, o, "stdcp"
+                ),
             )
             stdcp_covered['Std-CP'].append(_covered(stdcp_interval, true_y))
             stdcp_width['Std-CP'].append(_width(stdcp_interval))
@@ -1177,6 +1233,18 @@ if __name__ == '__main__':
     parser.add_argument('--acs_group_seed', type=int, default=42)
     parser.add_argument('--acs_expected_eligible_pumas', type=int, default=61)
     parser.add_argument('--acs_expected_test_pumas', type=int, default=31)
+    parser.add_argument(
+        '--quantile-mode',
+        choices=['deterministic', 'randomized'],
+        default='deterministic',
+        help='Conformal threshold selection for all methods.',
+    )
+    parser.add_argument(
+        '--quantile-base-seed',
+        type=int,
+        default=123,
+        help='Base seed for reproducible randomized conformal quantiles.',
+    )
     args = parser.parse_args()
 
     acs_o_values = [int(v.strip()) for v in args.acs_o_values.split(',') if v.strip() != '']
@@ -1196,6 +1264,8 @@ if __name__ == '__main__':
             'n_test_clinics':  15,
             'min_test_size':   10,
             'n_repeated':      50,
+            'quantile_mode':   args.quantile_mode,
+            'quantile_base_seed': args.quantile_base_seed,
         }
         df, X, calib_grps, test_grps, gcol, o_vals = load_bp(bp_config)
         res = run_bootstrap(df, X, calib_grps, test_grps, gcol, o_vals, bp_config)
@@ -1222,6 +1292,8 @@ if __name__ == '__main__':
             'n_test_clinics':  6,
             'min_test_size':   10,
             'n_repeated':      50,
+            'quantile_mode':   args.quantile_mode,
+            'quantile_base_seed': args.quantile_base_seed,
         }
         df, X, calib_grps, test_grps, gcol, o_vals = load_bp(bp_config)
         res = run_bootstrap(df, X, calib_grps, test_grps, gcol, o_vals, bp_config)
@@ -1246,6 +1318,8 @@ if __name__ == '__main__':
             'seed':              456,
             'alpha':             0.2,
             'alpha_selection':   0.5,
+            'quantile_mode':     args.quantile_mode,
+            'quantile_base_seed': args.quantile_base_seed,
             'acs_state':         args.acs_state.upper(),
             'n_puma_groups':     args.acs_n_groups,
             'min_puma_size':     args.acs_min_group_size,

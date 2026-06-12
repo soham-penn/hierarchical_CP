@@ -11,10 +11,24 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
-from scores import weighted_quantile
+from scores import conformal_threshold, merge_quantile_info
 
 
 _ALPHA_SPLIT_TIEBREAK_SEED = 123
+
+
+def _select_conformal_q(scores, weights, alpha, quantile_mode="deterministic",
+                        quantile_random_seed=None, quantile_rng=None,
+                        return_quantile_info=False):
+    return conformal_threshold(
+        scores=scores,
+        weights=weights,
+        alpha=alpha,
+        quantile_mode=quantile_mode,
+        random_seed=quantile_random_seed,
+        rng=quantile_rng,
+        return_info=return_quantile_info,
+    )
 
 
 def _select_s_tilde_with_tie_randomization(
@@ -167,7 +181,11 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                                                 o_observed, alpha, alpha_selection, mu_method,
                                                 test_index_target=None,
                                                 tau_override=None,
-                                                random_seed=None):
+                                                random_seed=None,
+                                                quantile_mode="deterministic",
+                                                quantile_random_seed=None,
+                                                quantile_rng=None,
+                                                return_quantile_info=False):
     """Randomized donor-HCP interval implementation (formerly in hcp_plus.py)."""
     K = len(Z_calibration)
     N = np.array([len(Z_calibration[j]) for j in range(K)])
@@ -232,9 +250,17 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                 scores.append(np.abs(z['Y'] - mu))
             scores.append(np.inf)
             weights = np.ones(len(scores)) / len(scores)
-            q = weighted_quantile(scores, weights, alpha)
+            q_info = _select_conformal_q(
+                scores, weights, alpha,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=quantile_random_seed,
+                quantile_rng=quantile_rng,
+                return_quantile_info=True,
+            )
+            q = q_info["q_randomized"]
         else:
             q = np.inf
+            q_info = None
 
         X_target = Z_test[test_index_target]['X']
         if global_model is not None:
@@ -248,12 +274,15 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
             mu_center = 0.0
 
         interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
-        return {
+        out = {
             'interval': interval,
             'mu_hat': mu_center,
             'number_selected_groups': 0,
             'donor_group_index': None,
         }
+        if return_quantile_info or quantile_mode == "randomized":
+            merge_quantile_info(out, q_info)
+        return out
 
     N_test = len(Z_test)
     if N_test < max(o_observed + 1, test_index_target + 1):
@@ -308,9 +337,17 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                 scores.append(np.abs(z['Y'] - mu))
             scores.append(np.inf)
             weights = np.ones(len(scores)) / len(scores)
-            q = weighted_quantile(scores, weights, alpha)
+            q_info = _select_conformal_q(
+                scores, weights, alpha,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=quantile_random_seed,
+                quantile_rng=quantile_rng,
+                return_quantile_info=True,
+            )
+            q = q_info["q_randomized"]
         else:
             q = np.inf
+            q_info = None
 
         X_target = Z_test[test_index_target]['X']
         mu_center = mu_method['predict_group_mu'](
@@ -320,11 +357,14 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
             u_group_vector=U_test[0, :],
         )
         interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
-        return {
+        out = {
             'interval': interval,
             'number_selected_groups': 1,
             'donor_group_index': None,
         }
+        if return_quantile_info or quantile_mode == "randomized":
+            merge_quantile_info(out, q_info)
+        return out
 
     donor_rng = np.random.default_rng(random_seed) if random_seed is not None else np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
     donor = donor_rng.choice(S_tilde)
@@ -426,8 +466,16 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
 
     if len(scores) == 0 or all(w <= 0 for w in weights):
         q = np.inf
+        q_info = None
     else:
-        q = weighted_quantile(scores, weights, alpha)
+        q_info = _select_conformal_q(
+            scores, weights, alpha,
+            quantile_mode=quantile_mode,
+            quantile_random_seed=quantile_random_seed,
+            quantile_rng=quantile_rng,
+            return_quantile_info=True,
+        )
+        q = q_info["q_randomized"]
 
     X_target = Z_test[test_index_target]['X']
     mu_center = mu_method['predict_group_mu'](
@@ -438,19 +486,26 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
     )
     interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
 
-    return {
+    out = {
         'interval': interval,
         'mu_hat': mu_center,
         'number_selected_groups': S_size,
         'donor_group_index': int(donor),
     }
+    if return_quantile_info or quantile_mode == "randomized":
+        merge_quantile_info(out, q_info)
+    return out
 
 
 def compute_donor_hcp_randomized_interval(U_calibration, Z_calibration, U_test, Z_test,
                                           o_observed, alpha, alpha_selection, mu_method,
                                           test_index_target=None,
                                           tau_override=None,
-                                          random_seed=None):
+                                          random_seed=None,
+                                          quantile_mode="deterministic",
+                                          quantile_random_seed=None,
+                                          quantile_rng=None,
+                                          return_quantile_info=False):
     """Randomized donor-HCP interval."""
     return _compute_donor_hcp_randomized_interval_impl(
         U_calibration=U_calibration,
@@ -464,12 +519,20 @@ def compute_donor_hcp_randomized_interval(U_calibration, Z_calibration, U_test, 
         test_index_target=test_index_target,
         tau_override=tau_override,
         random_seed=random_seed,
+        quantile_mode=quantile_mode,
+        quantile_random_seed=quantile_random_seed,
+        quantile_rng=quantile_rng,
+        return_quantile_info=return_quantile_info,
     )
 
 
 def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test, Z_test,
                                             o_observed, alpha, alpha_selection, mu_method,
-                                            test_index_target=None):
+                                            test_index_target=None,
+                                            quantile_mode="deterministic",
+                                            quantile_random_seed=None,
+                                            quantile_rng=None,
+                                            return_quantile_info=False):
     """
     Derandomized donor-HCP using the closed-form averaged donor measure.
 
@@ -571,6 +634,7 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
         values.append(np.inf)
         weights.append(w_inf)
 
+    q_info = None
     if len(values) == 0:
         q = np.inf
     else:
@@ -581,7 +645,14 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
             q = np.inf
         else:
             weights = weights / total_w
-            q = weighted_quantile(values, weights, alpha / 2.0)
+            q_info = _select_conformal_q(
+                values, weights, alpha / 2.0,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=quantile_random_seed,
+                quantile_rng=quantile_rng,
+                return_quantile_info=True,
+            )
+            q = q_info["q_randomized"]
 
     X_target = Z_test[test_index_target]['X']
     mu_center = mu_method['predict_global'](
@@ -592,7 +663,7 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
 
     interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
 
-    return {
+    out = {
         'interval': interval,
         'mu_hat': mu_center,
         'number_selected_groups': int(M + 1),
@@ -600,3 +671,6 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
         'bar_w': bar_w,
         'infinite_weight': float(max(0.0, w_inf)),
     }
+    if return_quantile_info or quantile_mode == "randomized":
+        merge_quantile_info(out, q_info)
+    return out

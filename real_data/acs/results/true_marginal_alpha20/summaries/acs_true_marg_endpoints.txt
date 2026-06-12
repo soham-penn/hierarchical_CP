@@ -7,14 +7,14 @@ Global pooled-income quantile (all filtered ACS rows, one interval):
   width        = $132,000
 
 Donor-HCP (with local correction) at o=20 — replicate intervals (income $):
-  median lower = $26,969
-  median upper = $163,165
-  median width = $136,197
-  replicate lower: 5%=$8,571, 95%=$54,529
-  replicate upper: 5%=$55,412, 95%=$326,519
+  median lower = $27,247
+  median upper = $158,932
+  median width = $131,685
+  replicate lower: 5%=$11,856, 95%=$58,092
+  replicate upper: 5%=$70,106, 95%=$328,393
 
 Geometry vs global pooled interval (per replicate):
-  nested inside pooled:     18.0%
+  nested inside pooled:     29.2%
   overlaps pooled:          100.0%
   entirely below pooled:    0.0%
   entirely above pooled:    0.0%

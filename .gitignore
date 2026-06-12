@@ -51,6 +51,9 @@ git_push.log
 NEW_RESULTS/true_marg_*/
 NEW_RESULTS_2/fixedN21_*/
 
+# Folktables / ACS download cache (re-fetch locally)
+real_data/acs/data/folktables_cache/
+
 # Large ACS raw data files
 real_data/acs/data/acs_data_all50states.csv
 real_data/acs/data/acs_data.csv

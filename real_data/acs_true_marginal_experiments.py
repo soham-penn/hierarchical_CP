@@ -43,7 +43,7 @@ from methods.baseline_hcp import (
     compute_subsampling_once_interval_radius,
     compute_repeated_subsampling_interval_radius,
 )
-from scores import absolute_residual_score
+from scores import absolute_residual_score, conformal_threshold, make_quantile_seed
 
 # Method lists
 BASELINE_METHODS = ['HCP', 'Pooling', 'Subsampling', 'Repeated']
@@ -51,9 +51,23 @@ HCP_METHODS = ['Donor-HCP', 'S-HCP']
 STD_CP_METHODS = ['Std-CP']
 METHODS = BASELINE_METHODS + HCP_METHODS + STD_CP_METHODS
 
-# Fixed prediction target: 21st individual (index 20). History size o uses indices 0..o-1.
+# Fixed prediction target (default: 21st individual, index 20). History size o uses indices 0..o-1.
 TARGET_INDEX = 20
 MIN_TARGET_PUMA_SIZE = TARGET_INDEX + 1  # 21
+
+
+def _set_target_index(target_index: int) -> None:
+    """Override module target index (CLI --target_index)."""
+    global TARGET_INDEX, MIN_TARGET_PUMA_SIZE
+    TARGET_INDEX = int(target_index)
+    MIN_TARGET_PUMA_SIZE = TARGET_INDEX + 1
+
+
+def _result_dir_name(*, permuted: bool, alpha_str: str, target_index: int) -> str:
+    prefix = "true_marginal_permuted" if permuted else "true_marginal"
+    if target_index != 20:
+        prefix = f"{prefix}_t{target_index}"
+    return f"{prefix}_{alpha_str}"
 
 # ==================== Helper functions ====================
 
@@ -72,6 +86,76 @@ def _width_income_from_log1p_interval(interval):
     income_lower = np.expm1(lower)
     income_upper = np.expm1(upper)
     return income_upper - income_lower
+
+
+def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
+                            random_seed=None, rng=None):
+    """Finite-sample split-conformal radius from calibration residuals."""
+    scores = np.asarray(abs_residuals, dtype=float)
+    scores = scores[np.isfinite(scores)]
+    n = len(scores)
+    if n == 0:
+        return np.inf
+    if quantile_mode == "randomized":
+        return conformal_threshold(
+            scores=scores,
+            weights=None,
+            alpha=alpha,
+            quantile_mode="randomized",
+            random_seed=random_seed,
+            rng=rng,
+            return_info=False,
+        )
+    k = int(np.ceil((n + 1) * (1 - alpha)))
+    k = min(max(1, k), n)
+    return float(np.partition(scores, k - 1)[k - 1])
+
+
+def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng,
+                             quantile_mode="deterministic", quantile_random_seed=None):
+    """
+    Standard split CP within one target PUMA using only its first o history rows.
+
+    Uses indices 0..o-1 for train/cal split conformal; predicts x_target (index 20).
+    Other PUMAs are not used.
+    """
+    x_hist = np.asarray(x_hist, dtype=float)
+    y_hist = np.asarray(y_hist, dtype=float)
+    if x_hist.ndim == 1:
+        x_hist = x_hist.reshape(-1, 1)
+
+    n_hist = len(y_hist)
+    n_train = n_hist // 2
+    n_cal = n_hist - n_train
+    if n_train < 1 or n_cal < 1:
+        return (-np.inf, np.inf)
+
+    perm = rng.permutation(n_hist)
+    train_idx = perm[:n_train]
+    cal_idx = perm[n_train:]
+
+    x_train = x_hist[train_idx]
+    y_train = y_hist[train_idx]
+    x_cal = x_hist[cal_idx]
+    y_cal = y_hist[cal_idx]
+
+    x_train_aug = np.column_stack([np.ones(len(x_train)), x_train])
+    x_cal_aug = np.column_stack([np.ones(len(x_cal)), x_cal])
+
+    beta, *_ = np.linalg.lstsq(x_train_aug, y_train, rcond=None)
+    y_cal_pred = x_cal_aug @ beta
+    radius = _split_conformal_radius(
+        np.abs(y_cal - y_cal_pred),
+        alpha,
+        quantile_mode=quantile_mode,
+        random_seed=quantile_random_seed,
+        rng=rng,
+    )
+
+    x_target = np.asarray(x_target, dtype=float).reshape(1, -1)
+    x_target_aug = np.column_stack([np.ones(1), x_target])
+    y_hat = float((x_target_aug @ beta)[0])
+    return _interval_from_radius(y_hat, radius)
 
 
 def compute_global_pooled_income_interval(df: pd.DataFrame, alpha: float):
@@ -228,6 +312,7 @@ def sample_calibration_fixed_per_stratum(
     o_values,
     n_calib_per_stratum=4,
     n_calib_strata=4,
+    min_calib_puma_size=None,
 ):
     """
     Draw a fixed calibration set: n_calib_per_stratum PUMAs from each of strata 1..n_calib_strata.
@@ -239,7 +324,9 @@ def sample_calibration_fixed_per_stratum(
             f"Need at least {n_calib_strata} strata, got {len(stratum_names)}"
         )
 
-    max_o = max(int(o) for o in o_values)
+    if min_calib_puma_size is None:
+        min_calib_puma_size = max(int(o) for o in o_values) + 1
+    min_calib_puma_size = int(min_calib_puma_size)
     calib_strata = stratum_names[:n_calib_strata]
     rng = np.random.default_rng(selection_seed)
 
@@ -248,11 +335,11 @@ def sample_calibration_fixed_per_stratum(
         members = [
             int(g)
             for g in strata[k]
-            if int(group_counts.get(g, 0)) > max_o
+            if int(group_counts.get(g, 0)) >= min_calib_puma_size
         ]
         if len(members) < n_calib_per_stratum:
             raise ValueError(
-                f"Stratum {k}: need {n_calib_per_stratum} PUMAs with size > {max_o}, "
+                f"Stratum {k}: need {n_calib_per_stratum} PUMAs with size >= {min_calib_puma_size}, "
                 f"got {len(members)}"
             )
         chosen = rng.choice(np.asarray(members), size=n_calib_per_stratum, replace=False)
@@ -340,6 +427,7 @@ def sample_calibration_and_target_symmetric(
     n_calib_per_stratum=5,
     n_calib_strata=4,
     min_target_size=MIN_TARGET_PUMA_SIZE,
+    min_calib_puma_size=None,
 ):
     """
     Option B: stratified calibration + uniform target from remaining eligible PUMAs.
@@ -357,7 +445,9 @@ def sample_calibration_and_target_symmetric(
             f"Need at least {n_calib_strata} strata, got {len(stratum_names)}"
         )
 
-    max_o = max(int(o) for o in o_values)
+    if min_calib_puma_size is None:
+        min_calib_puma_size = max(int(o) for o in o_values) + 1
+    min_calib_puma_size = int(min_calib_puma_size)
     calib_strata = stratum_names[:n_calib_strata]
     rng = np.random.default_rng(selection_seed)
 
@@ -366,7 +456,7 @@ def sample_calibration_and_target_symmetric(
         members = [
             int(g)
             for g in strata[k]
-            if int(group_counts.get(g, 0)) > max_o
+            if int(group_counts.get(g, 0)) >= min_calib_puma_size
         ]
         if len(members) < n_calib_per_stratum:
             return None, None
@@ -436,15 +526,18 @@ def count_possible_symmetric_draws(
     n_calib_per_stratum=5,
     n_calib_strata=4,
     min_target_size=MIN_TARGET_PUMA_SIZE,
+    min_calib_puma_size=None,
 ):
     """Approx. number of distinct (calib, target) pairs under Option B sampling."""
-    max_o = max(int(o) for o in o_values)
+    if min_calib_puma_size is None:
+        min_calib_puma_size = max(int(o) for o in o_values) + 1
+    min_calib_puma_size = int(min_calib_puma_size)
     names = sorted(strata.keys())
     calib_strata = names[:n_calib_strata]
 
     total = 1
     for k in calib_strata:
-        n = sum(1 for g in strata[k] if int(group_counts.get(g, 0)) > max_o)
+        n = sum(1 for g in strata[k] if int(group_counts.get(g, 0)) >= min_calib_puma_size)
         if n < n_calib_per_stratum:
             return 0
         total *= math.comb(n, n_calib_per_stratum)
@@ -470,6 +563,8 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
     alpha = config['alpha']
     alpha_sel = config.get('alpha_selection', 0.5)
     n_rep = config.get('n_repeated', 50)
+    quantile_mode = config.get('quantile_mode', 'deterministic')
+    quantile_base_seed = config.get('quantile_base_seed', config['seed'])
     n_calib_per_stratum = config.get('n_calib_per_stratum', 5)
     n_puma_groups = config.get('n_puma_groups', 20)
     o_values_rep = config.get('o_values', [0, 5, 10, 15, 20])
@@ -498,6 +593,7 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
                 n_calib_per_stratum=n_calib_per_stratum,
                 n_calib_strata=4,
                 min_target_size=MIN_TARGET_PUMA_SIZE,
+                min_calib_puma_size=config.get('min_calib_puma_size'),
             )
     except (ValueError, RuntimeError):
         return None
@@ -571,10 +667,26 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
         ])
         scores_list.append(absolute_residual_score(yj, muj))
 
-    T_hcp = compute_hcp_interval_radius(scores_list, alpha)
-    T_pool = compute_pooling_interval_radius(scores_list, alpha)
-    T_sub = compute_subsampling_once_interval_radius(scores_list, alpha)
-    T_rep = compute_repeated_subsampling_interval_radius(scores_list, alpha, n_rep)
+    T_hcp = compute_hcp_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "hcp"),
+    )
+    T_pool = compute_pooling_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "pool"),
+    )
+    T_sub = compute_subsampling_once_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "sub"),
+    )
+    T_rep = compute_repeated_subsampling_interval_radius(
+        scores_list, alpha, n_rep,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "rep"),
+    )
 
     U_test = np.zeros((1, 1))
 
@@ -660,6 +772,10 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
                 test_index_target=target_index,
                 tau_override=_tau_override(config),
                 random_seed=dhcp_seed,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=make_quantile_seed(
+                    quantile_base_seed, replicate_idx, target_index, o, "donor_hcp"
+                ),
             )
             int_dhcp = res_dhcp['interval']
         except Exception:
@@ -678,6 +794,10 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
                 mu_method=mu_hcp,
                 test_index_target=target_index,  # FIXED target_index
                 tau_override=_tau_override(config),
+                quantile_mode=quantile_mode,
+                quantile_random_seed=make_quantile_seed(
+                    quantile_base_seed, replicate_idx, target_index, o, "sample_hcp"
+                ),
             )
             int_shcp = res_shcp['interval']
         except Exception:
@@ -685,13 +805,22 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
 
         hcp_result['S-HCP'][o] = _result_record(int_shcp, true_y)
 
-        # Standard CP (on test group only)
+        # Standard split CP: first o rows in target PUMA only; predict index target_index.
         if o > 0:
-            y_cal_test = np.array([group_data[test_group]['Y'][i] for i in range(o)])
-            mu_stdcp = np.mean(y_cal_test)
-            scores_stdcp = np.abs(y_cal_test - mu_stdcp)
-            q_stdcp = np.quantile(scores_stdcp, 1 - alpha, method='higher')
-            int_stdcp = (mu_stdcp - q_stdcp, mu_stdcp + q_stdcp)
+            stdcp_rng = np.random.default_rng(
+                make_quantile_seed(quantile_base_seed, replicate_idx, target_index, o, "stdcp_split")
+            )
+            int_stdcp = _compute_std_cp_interval(
+                x_hist=group_data[test_group]['X'][:o],
+                y_hist=group_data[test_group]['Y'][:o],
+                x_target=x_target,
+                alpha=alpha,
+                rng=stdcp_rng,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=make_quantile_seed(
+                    quantile_base_seed, replicate_idx, target_index, o, "stdcp"
+                ),
+            )
         else:
             int_stdcp = (-np.inf, np.inf)
 
@@ -719,6 +848,8 @@ def run_one_replicate_avg_over_targets(
     alpha = config['alpha']
     alpha_sel = config.get('alpha_selection', 0.5)
     n_rep = config.get('n_repeated', 50)
+    quantile_mode = config.get('quantile_mode', 'deterministic')
+    quantile_base_seed = config.get('quantile_base_seed', config['seed'])
     truncate_n = config.get('truncate_n', None)
     n_calib_per = config.get('n_calib_per_stratum', 4)
     o_values_rep = config.get('o_values', o_values)
@@ -737,6 +868,7 @@ def run_one_replicate_avg_over_targets(
                 o_values=o_values_rep,
                 n_calib_per_stratum=n_calib_per,
                 n_calib_strata=4,
+                min_calib_puma_size=config.get('min_calib_puma_size'),
             )
         except ValueError:
             return None
@@ -793,10 +925,26 @@ def run_one_replicate_avg_over_targets(
         ])
         scores_list.append(absolute_residual_score(yj, muj))
 
-    T_hcp = compute_hcp_interval_radius(scores_list, alpha)
-    T_pool = compute_pooling_interval_radius(scores_list, alpha)
-    T_sub = compute_subsampling_once_interval_radius(scores_list, alpha)
-    T_rep = compute_repeated_subsampling_interval_radius(scores_list, alpha, n_rep)
+    T_hcp = compute_hcp_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "hcp"),
+    )
+    T_pool = compute_pooling_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "pool"),
+    )
+    T_sub = compute_subsampling_once_interval_radius(
+        scores_list, alpha,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "sub"),
+    )
+    T_rep = compute_repeated_subsampling_interval_radius(
+        scores_list, alpha, n_rep,
+        quantile_mode=quantile_mode,
+        random_seed=make_quantile_seed(quantile_base_seed, replicate_idx, 0, 0, "rep"),
+    )
 
     U_test = np.zeros((1, 1))
     baseline_result = {m: {} for m in BASELINE_METHODS}
@@ -875,6 +1023,10 @@ def run_one_replicate_avg_over_targets(
                     test_index_target=target_index,
                     tau_override=_tau_override(config),
                     random_seed=dhcp_seed,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, replicate_idx, target_index, o, "donor_hcp"
+                    ),
                 )
                 int_dhcp = res_dhcp['interval']
             except Exception:
@@ -896,6 +1048,10 @@ def run_one_replicate_avg_over_targets(
                     mu_method=mu_hcp,
                     test_index_target=target_index,
                     tau_override=_tau_override(config),
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, replicate_idx, target_index, o, "sample_hcp"
+                    ),
                 )
                 int_shcp = res_shcp['interval']
             except Exception:
@@ -906,10 +1062,22 @@ def run_one_replicate_avg_over_targets(
             hcp_wid_inc['S-HCP'].append(_width_income_from_log1p_interval(int_shcp))
 
             if o > 0:
-                y_hist = np.array([group_data[test_group]['Y'][i] for i in range(o)])
-                mu_stdcp = np.mean(y_hist)
-                q_stdcp = np.quantile(np.abs(y_hist - mu_stdcp), 1 - alpha, method='higher')
-                int_stdcp = (mu_stdcp - q_stdcp, mu_stdcp + q_stdcp)
+                stdcp_rng = np.random.default_rng(
+                    make_quantile_seed(
+                        quantile_base_seed, replicate_idx, target_index, o, "stdcp_split"
+                    )
+                )
+                int_stdcp = _compute_std_cp_interval(
+                    x_hist=group_data[test_group]['X'][:o],
+                    y_hist=group_data[test_group]['Y'][:o],
+                    x_target=x_target,
+                    alpha=alpha,
+                    rng=stdcp_rng,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, replicate_idx, target_index, o, "stdcp"
+                    ),
+                )
             else:
                 int_stdcp = (-np.inf, np.inf)
 
@@ -1285,8 +1453,20 @@ if __name__ == '__main__':
     parser.add_argument('--acs_state', type=str, default='CA')
     parser.add_argument('--acs_csv', type=str, default=None, help='Path to ACS PUMS CSV')
     parser.add_argument('--n_puma_groups', type=int, default=20, help='Number of non-target PUMAs')
-    parser.add_argument('--min_puma_size', type=int, default=21,
-                        help='Minimum PUMA size (must be >= TARGET_INDEX+1 for index 20)')
+    parser.add_argument('--min_puma_size', type=int, default=None,
+                        help='Minimum PUMA size for eligibility/strata (default: 21)')
+    parser.add_argument(
+        '--min_calib_puma_size',
+        type=int,
+        default=None,
+        help='Minimum PUMA size for calibration draws (default: --min_puma_size; targets still need --target_index+1)',
+    )
+    parser.add_argument(
+        '--target_index',
+        type=int,
+        default=20,
+        help='Fixed within-PUMA target row index (history uses indices 0..o-1; need size > max(o, target_index))',
+    )
     parser.add_argument('--o_values', type=str, default='0,5,10,15,20', help='Comma-separated o values')
     parser.add_argument(
         '--design',
@@ -1319,20 +1499,38 @@ if __name__ == '__main__':
         help='If set, use only the first N rows per PUMA (DGP uses N=21)',
     )
     parser.add_argument(
+        '--quantile-mode',
+        choices=['deterministic', 'randomized'],
+        default='deterministic',
+        help='Conformal threshold selection for all methods.',
+    )
+    parser.add_argument(
+        '--quantile-base-seed',
+        type=int,
+        default=456,
+        help='Base seed for reproducible randomized conformal quantiles.',
+    )
+    parser.add_argument(
         '--no_within_group',
         action='store_true',
         help='Disable within-group training/shrinkage in Donor-HCP and S-HCP.',
     )
     parser.add_argument(
-        '--permute_rows',
+        '--no_permute_rows',
         action='store_true',
         help=(
-            'Randomly permute rows within every selected PUMA in each replicate. '
-            'This changes the stream order without bootstrapping or replacement.'
+            'Disable within-PUMA row permutation (default: permute). '
+            'Not recommended: fixed row order breaks exchangeability for target index 20.'
         ),
     )
 
     args = parser.parse_args()
+    args.permute_rows = not args.no_permute_rows
+    _set_target_index(args.target_index)
+    if args.min_puma_size is None:
+        args.min_puma_size = 21
+    if args.min_calib_puma_size is None:
+        args.min_calib_puma_size = args.min_puma_size
 
     print("=" * 70)
     print("ACS TRUE MARGINAL COVERAGE EXPERIMENTS")
@@ -1414,6 +1612,7 @@ if __name__ == '__main__':
             o_values=o_values,
             n_calib_per_stratum=n_calib_per,
             n_calib_strata=4,
+            min_calib_puma_size=args.min_calib_puma_size,
         )
         calib_set = set(fixed_calib_groups)
         fixed_test_groups = sorted(
@@ -1429,6 +1628,7 @@ if __name__ == '__main__':
         eligible_groups,
         o_values,
         n_calib_per_stratum=n_calib_per,
+        min_calib_puma_size=args.min_calib_puma_size,
     )
     if design == 'conditional':
         print(
@@ -1441,7 +1641,7 @@ if __name__ == '__main__':
     elif design == 'marginal_one_target':
         print(
             f"\n  Marginal one-target: {n_calib_per} calib PUMAs/stratum from strata 1–4 "
-            f"(size > max(o)={max(o_values)}), then 1 target PUMA from the remainder; "
+            f"(calib size >= {args.min_calib_puma_size}), then 1 target PUMA from the remainder; "
             f"row permutation={args.permute_rows}"
         )
         print(f"  Approx. upper bound on (calib, target) pairs: {n_possible:,}; B={args.B} replicates")
@@ -1455,11 +1655,16 @@ if __name__ == '__main__':
     else:
         print(
             f"\n  Marginal: each replicate draws {n_calib_per} calib PUMAs/stratum × 4 strata "
-            f"(size > max(o)={max(o_values)}), no row bootstrap, "
+            f"(calib size >= {args.min_calib_puma_size}), no row bootstrap, "
             f"row permutation={args.permute_rows}, "
-            f"then averages coverage over all other eligible target PUMAs (index {TARGET_INDEX})"
+            f"then averages coverage over target PUMAs with size > max(o, {TARGET_INDEX}) "
+            f"(index {TARGET_INDEX})"
         )
-        print(f"  Typical test PUMAs per replicate: ~{max(1, len(target_eligible) - n_calib_per * 4)}")
+        n_test_approx = sum(
+            1 for g in target_eligible
+            if int(group_counts[g]) > max(max(o_values), TARGET_INDEX)
+        )
+        print(f"  Target PUMAs with size > max(o, target_index): {n_test_approx}")
 
     # Global pooled-income interval (one prediction set for all data)
     pooled_lo, pooled_hi = compute_global_pooled_income_interval(df, args.alpha)
@@ -1477,6 +1682,8 @@ if __name__ == '__main__':
         'seed': 456,
         'alpha': args.alpha,
         'alpha_selection': 0.5,
+        'quantile_mode': args.quantile_mode,
+        'quantile_base_seed': args.quantile_base_seed,
         'n_repeated': 50,
         'n_puma_groups': args.n_puma_groups,
         'n_calib_per_stratum': n_calib_per,
@@ -1489,15 +1696,22 @@ if __name__ == '__main__':
         'truncate_n': args.truncate_n,
         'within_group': not args.no_within_group,
         'permute_rows': args.permute_rows,
+        'min_calib_puma_size': args.min_calib_puma_size,
     }
 
     print(f"\nRunning ACS coverage experiments (design={design}):")
     print(f"  Alpha: {args.alpha} (nominal coverage {1 - args.alpha:.0%})")
     print(f"  Donor-HCP: stock randomized interval; within-group training = {not args.no_within_group}")
+    print(f"  Conformal quantile mode: {args.quantile_mode}")
     print(
         f"  Target index: {TARGET_INDEX}; calib ∩ target = ∅; no ACS row bootstrap; "
         f"row permutation = {args.permute_rows}"
     )
+    if not args.permute_rows:
+        print(
+            "  WARNING: permute_rows=False — indices 0..o-1 are fixed ACS row order, "
+            f"not exchangeable with target index {TARGET_INDEX}. Expect coverage to fall as o increases."
+        )
     print(f"  Replicates: {args.B}")
     print(f"  Non-target PUMAs per replicate: {args.n_puma_groups}")
     print(f"  Workers: {args.n_workers}")
@@ -1516,8 +1730,11 @@ if __name__ == '__main__':
 
     # Save results (separate folder for each alpha value)
     alpha_str = alpha_to_tag(config['alpha'])  # e.g., "alpha10" or "alpha07p5"
-    result_prefix = 'true_marginal_permuted' if args.permute_rows else 'true_marginal'
-    output_dir = base_dir / f'acs/results/{result_prefix}_{alpha_str}'
+    output_dir = base_dir / 'acs/results' / _result_dir_name(
+        permuted=args.permute_rows,
+        alpha_str=alpha_str,
+        target_index=TARGET_INDEX,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_csv = output_dir / f'acs_true_marg_{alpha_str}_detailed.csv'

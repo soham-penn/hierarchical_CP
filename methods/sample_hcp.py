@@ -11,10 +11,24 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
-from scores import weighted_quantile
+from scores import conformal_threshold, merge_quantile_info
 
 
 _ALPHA_SPLIT_TIEBREAK_SEED = 123
+
+
+def _select_conformal_q(scores, weights, alpha, quantile_mode="deterministic",
+                        quantile_random_seed=None, quantile_rng=None,
+                        return_quantile_info=False):
+    return conformal_threshold(
+        scores=scores,
+        weights=weights,
+        alpha=alpha,
+        quantile_mode=quantile_mode,
+        random_seed=quantile_random_seed,
+        rng=quantile_rng,
+        return_info=return_quantile_info,
+    )
 
 
 def _select_s_tilde_with_tie_randomization(N, o_observed, alpha_selection):
@@ -64,7 +78,11 @@ def _select_s_tilde_with_tie_randomization(N, o_observed, alpha_selection):
 def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_test, Z_test,
                                                  o_observed, alpha, alpha_selection, mu_method,
                                                  test_index_target=None,
-                                                 tau_override=None):
+                                                 tau_override=None,
+                                                 quantile_mode="deterministic",
+                                                 quantile_random_seed=None,
+                                                 quantile_rng=None,
+                                                 return_quantile_info=False):
     """Randomized sample-HCP interval implementation (formerly in hcp_sample.py)."""
     K = len(Z_calibration)
     N = np.array([len(Z_calibration[j]) for j in range(K)])
@@ -218,7 +236,14 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
             'number_selected_groups': S_size,
         }
 
-    q = weighted_quantile(values, weights, alpha)
+    q_info = _select_conformal_q(
+        values, weights, alpha,
+        quantile_mode=quantile_mode,
+        quantile_random_seed=quantile_random_seed,
+        quantile_rng=quantile_rng,
+        return_quantile_info=True,
+    )
+    q = q_info["q_randomized"]
 
     X_target = Z_test[test_index_target]['X']
     mu_center = mu_method['predict_group_mu'](
@@ -233,17 +258,24 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
     else:
         interval = (mu_center - q, mu_center + q)
 
-    return {
+    out = {
         'interval': interval,
         'mu_hat': mu_center,
         'number_selected_groups': S_size,
     }
+    if return_quantile_info or quantile_mode == "randomized":
+        merge_quantile_info(out, q_info)
+    return out
 
 
 def compute_sample_hcp_randomized_interval(U_calibration, Z_calibration, U_test, Z_test,
                                            o_observed, alpha, alpha_selection, mu_method,
                                            test_index_target=None,
-                                           tau_override=None):
+                                           tau_override=None,
+                                           quantile_mode="deterministic",
+                                           quantile_random_seed=None,
+                                           quantile_rng=None,
+                                           return_quantile_info=False):
     """Randomized sample-HCP interval."""
     return _compute_sample_hcp_randomized_interval_impl(
         U_calibration=U_calibration,
@@ -256,12 +288,20 @@ def compute_sample_hcp_randomized_interval(U_calibration, Z_calibration, U_test,
         mu_method=mu_method,
         test_index_target=test_index_target,
         tau_override=tau_override,
+        quantile_mode=quantile_mode,
+        quantile_random_seed=quantile_random_seed,
+        quantile_rng=quantile_rng,
+        return_quantile_info=return_quantile_info,
     )
 
 
 def compute_sample_hcp_derandomized_interval(U_calibration, Z_calibration, U_test, Z_test,
                                              o_observed, alpha, alpha_selection, mu_method,
-                                             test_index_target=None):
+                                             test_index_target=None,
+                                             quantile_mode="deterministic",
+                                             quantile_random_seed=None,
+                                             quantile_rng=None,
+                                             return_quantile_info=False):
     """
     Derandomized sample-HCP using the closed-form averaged subsampling measure.
 
@@ -352,6 +392,7 @@ def compute_sample_hcp_derandomized_interval(U_calibration, Z_calibration, U_tes
     values.append(np.inf)
     weights.append(w_test)
 
+    q_info = None
     if len(values) == 0:
         q = np.inf
     else:
@@ -362,7 +403,14 @@ def compute_sample_hcp_derandomized_interval(U_calibration, Z_calibration, U_tes
             q = np.inf
         else:
             weights = weights / total_w
-            q = weighted_quantile(values, weights, alpha / 2.0)
+            q_info = _select_conformal_q(
+                values, weights, alpha / 2.0,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=quantile_random_seed,
+                quantile_rng=quantile_rng,
+                return_quantile_info=True,
+            )
+            q = q_info["q_randomized"]
 
     X_target = Z_test[test_index_target]['X']
     mu_center = mu_method['predict_global'](
@@ -373,9 +421,12 @@ def compute_sample_hcp_derandomized_interval(U_calibration, Z_calibration, U_tes
 
     interval = (-np.inf, np.inf) if np.isinf(q) else (mu_center - q, mu_center + q)
 
-    return {
+    out = {
         'interval': interval,
         'mu_hat': mu_center,
         'number_selected_groups': int(m + 1),
         'infinite_weight': float(w_test),
     }
+    if return_quantile_info or quantile_mode == "randomized":
+        merge_quantile_info(out, q_info)
+    return out
