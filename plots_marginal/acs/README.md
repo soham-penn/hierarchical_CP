@@ -1,0 +1,54 @@
+# ACS real-data experiments (paper)
+
+California ACS PUMS income prediction with donor-HCP (GHCP), sample-HCP, and conformal baselines.
+
+## Active suite: `min21/`
+
+| Setting | Value |
+|---------|--------|
+| Cohort | CA, foreign-born, YOEP ≥ 2000, age 25–54, usual hours ≥ 40 |
+| Individuals | 12,285 |
+| PUMAs | 265 total; 212 eligible (size ≥ 21) |
+| Target index | 20 (person at position 21 within PUMA) |
+| o values | 0, 5, 10, 15, 20 |
+| Row order | Permuted within PUMA each replicate |
+| Global μ | Random forest (50 trees, min leaf 5), mean within-PUMA shrinkage |
+| GHCP score | Absolute \|Y − μ\| |
+| Std-CP | Studentized \|Y − μ\| / σ (local RF σ); α = 0.2 at all o; α = 0.1 at o = 20 only |
+
+### Directory layout
+
+```
+min21/
+├── results/          # Detailed CSVs (B = 1000 production)
+├── figures/          # Paper-style PDFs
+├── summaries/        # Long trials + by-method tables
+├── logs/             # Run logs
+├── seeds_manifest.json
+└── demo_b200/        # B = 200 verification runs (figures + summaries)
+```
+
+### Reproduce
+
+```bash
+# Production (B = 1000): α = 0.2 full Std-CP, α = 0.1 Std-CP at o = 20 only
+.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
+  --B 1000 --n_workers 8 --plot
+
+# Verification only (B = 200)
+.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
+  --B 200 --n_workers 8 --plot
+```
+
+Plot from saved results:
+
+```bash
+.venv/bin/python real_data/acs/plot_dgp_style_paper_plots.py --suite rf_yoep_fb_min21
+```
+
+Core runner (all flags): `code/marginal/run_acs_experiments.py`  
+Cohort filters and design matrix: `real_data/acs/data_processing.py`
+
+## Archive
+
+Earlier ACS variants (stratified OLS/RF, studentized-only runs, YOEP-extended cohorts without age/hours filters, min31 permute, diagnostics) are under [`old/`](old/).

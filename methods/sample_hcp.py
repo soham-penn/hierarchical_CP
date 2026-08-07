@@ -12,9 +12,61 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 from scores import conformal_threshold, merge_quantile_info
+from methods.mu_methods import global_weight, resolve_shrinkage_weight
+from methods.nonconformity import (
+    conformity_score,
+    fit_score_aux,
+    get_score_type,
+    interval_from_threshold,
+)
+
+
+def _shrinkage_weight(mu_method, global_model, group_adjustment) -> float:
+    """Same w_g as mean shrinkage: N_comp^c / (N_comp^c + τ); honors w_g_override."""
+    return resolve_shrinkage_weight(mu_method, global_model, group_adjustment)
 
 
 _ALPHA_SPLIT_TIEBREAK_SEED = 123
+
+
+def _fit_global_scale_model(U_all, Z_all, group_index_vector, mu_method, global_model,
+                            alpha=0.1, tau=0):
+    """Fit auxiliary score models (RF-σ or CQR quantiles)."""
+    if get_score_type(mu_method) == "absolute" and bool(mu_method.get("use_standardized_score", False)):
+        mu_method = dict(mu_method)
+        mu_method["score_type"] = "studentized"
+    return fit_score_aux(
+        U_all=U_all,
+        Z_all=Z_all,
+        group_index_vector=group_index_vector,
+        mu_method=mu_method,
+        global_model=global_model,
+        alpha=alpha,
+        tau=int(tau),
+    )
+
+
+def _predict_scale(scale_model, x_vector, u_vector):
+    from methods.nonconformity import predict_scale
+    if scale_model is None:
+        return 1.0
+    if isinstance(scale_model, dict):
+        return predict_scale(scale_model, x_vector, u_vector)
+    x = np.asarray(x_vector, dtype=float).ravel()
+    u = np.asarray(u_vector, dtype=float).ravel()
+    feat = np.concatenate([[1.0], x, u])
+    log_s = float(feat @ scale_model)
+    s = float(np.exp(log_s))
+    return float(np.clip(s, 1e-6, 1e12))
+
+
+def _mu_global_only(mu_method, global_model, x_vector, u_vector) -> float:
+    return float(mu_method['predict_group_mu'](
+        model_global=global_model,
+        group_adjustment=0.0,
+        x_vector=x_vector,
+        u_group_vector=u_vector,
+    ))
 
 
 def _select_conformal_q(scores, weights, alpha, quantile_mode="deterministic",
@@ -147,11 +199,21 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
     S_comp = np.setdiff1d(list(range(K + 1)), S)
     if len(S_comp) == 0:
         global_model = None
+        scale_model = None
     else:
         global_model = mu_method['fit_global'](
             U_matrix=U_all,
             Z_list=Z_all,
             group_index_vector=list(S_comp),
+        )
+        scale_model = _fit_global_scale_model(
+            U_all=U_all,
+            Z_all=Z_all,
+            group_index_vector=list(S_comp),
+            mu_method=mu_method,
+            global_model=global_model,
+            alpha=alpha,
+            tau=tau,
         )
 
     n_slots = o_observed + 1 - tau
@@ -192,7 +254,11 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
                     x_vector=z['X'],
                     u_group_vector=Uj,
                 )
-                values.append(np.abs(z['Y'] - mu))
+                mu_g = _mu_global_only(mu_method, global_model, z['X'], Uj)
+                w_g = _shrinkage_weight(mu_method, global_model, offset_j)
+                values.append(conformity_score(
+                    z['Y'], mu, z['X'], Uj, scale_model, mu_global=mu_g, w_g=w_g,
+                ))
                 weights.append(w_slot)
 
         else:
@@ -215,6 +281,7 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
                 Tj_cal = list(range(o_observed))
                 offset_test = 0.0
 
+            w_g_test = _shrinkage_weight(mu_method, global_model, offset_test)
             for i_idx in Tj_cal:
                 z = Zj[i_idx]
                 mu = mu_method['predict_group_mu'](
@@ -223,7 +290,10 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
                     x_vector=z['X'],
                     u_group_vector=Uj,
                 )
-                values.append(np.abs(z['Y'] - mu))
+                mu_g = _mu_global_only(mu_method, global_model, z['X'], Uj)
+                values.append(conformity_score(
+                    z['Y'], mu, z['X'], Uj, scale_model, mu_global=mu_g, w_g=w_g_test,
+                ))
                 weights.append(w_slot)
 
             values.append(np.inf)
@@ -253,10 +323,11 @@ def _compute_sample_hcp_randomized_interval_impl(U_calibration, Z_calibration, U
         u_group_vector=U_test[0, :],
     )
 
-    if np.isinf(q):
-        interval = (-np.inf, np.inf)
-    else:
-        interval = (mu_center - q, mu_center + q)
+    mu_g_target = _mu_global_only(mu_method, global_model, X_target, U_test[0, :])
+    w_g_t = _shrinkage_weight(mu_method, global_model, offset_test)
+    interval = interval_from_threshold(
+        q, mu_center, X_target, U_test[0, :], scale_model, mu_global=mu_g_target, w_g=w_g_t,
+    )
 
     out = {
         'interval': interval,

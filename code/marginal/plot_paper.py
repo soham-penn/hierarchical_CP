@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Unified paper plotting for true-marginal experiments.
+"""Paper plotting for true-marginal experiments.
 
-Suites:
-  dgp_ols            - standard joint-XY DGP, OLS global predictor
-  dgp_rf             - latent intercept gamma=5, RF global predictor
-  dgp_latent_gamma5  - latent intercept gamma=5, OLS global predictor
-  acs                - ACS true-marginal (permuted rows)
+Canonical Simulations suite (paper):
+  dgp_rf  — latent intercept γ=5, RF global μ, absolute residual score
+            plots → plots_marginal/dgp_true_marginal_rf/
+            raw   → results_marginal/dgp/true_marg_latent_rf_gamma5p0_*
+
+ACS plotting wrappers remain available; the active real-data suite is `plots_marginal/acs/min21/`.
+Alternate DGP suites (OLS, γ=0, studentized, capture, …) live under old/code/.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -53,7 +54,7 @@ def _raw_files_prefix(prefix: str, dataset: str) -> list[Path]:
     return files
 
 
-def _patch_dgp(prefix: str, plot_subdir: str, title_suffix: str = "") -> None:
+def _patch_dgp(prefix: str, plot_subdir: str) -> None:
     paper_root = PLOTS_MARGINAL / plot_subdir
     pm.PAPER_ROOT = paper_root
     pm.FIG_DIR = paper_root / "figures"
@@ -66,157 +67,160 @@ def _patch_dgp(prefix: str, plot_subdir: str, title_suffix: str = "") -> None:
     )
 
 
-def _build_dgp_ols(include_stability: bool = True, include_baselines: bool = True) -> list[Path]:
-    _patch_dgp("true_marg", "dgp_true_marginal")
-    pm.reset_output_dirs()
-    all_o = sorted(set(pm.O_VALUES_UPTO35))
-    poisson_trials = pm.load_trials(pm.POISSON_DATASET, all_o)
-    poisson_summary = pm.summarize_trials(poisson_trials)
-    poisson_stability = pm.load_stability_summary(pm.POISSON_DATASET) if include_stability else None
-    fixed_trials = pm.load_trials(pm.FIXED_DATASET, all_o)
-    fixed_summary = pm.summarize_trials(fixed_trials)
-    baseline_trials_poisson = baseline_summary_poisson = None
-    baseline_trials_fixed = baseline_summary_fixed = None
-    if include_baselines:
-        baseline_trials_poisson = pm.load_trials(pm.POISSON_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
-        baseline_trials_fixed = pm.load_trials(pm.FIXED_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
-        baseline_summary_poisson = pm.summarize_trials(baseline_trials_poisson)
-        baseline_summary_fixed = pm.summarize_trials(baseline_trials_fixed)
-
-    outputs: list[Path] = []
-    outputs.extend(pm.write_summary_files(pm.POISSON_DATASET, poisson_trials, poisson_summary, poisson_stability))
-    outputs.extend(pm.write_summary_files(pm.FIXED_DATASET, fixed_trials, fixed_summary))
-    label_p, label_f = "Poisson", r"Fixed $N_k=21$"
-    outputs += [
-        pm.plot_coverage_lines_width_boxplots(poisson_trials, poisson_summary, pm.O_VALUES,
-            "poisson_1_dhcp_coverage_lines_width_boxplots_by_alpha.pdf", label_p),
-        pm.plot_coverage_width_line_bands(poisson_summary, pm.O_VALUES,
-            "poisson_2_dhcp_coverage_width_line_bands_by_alpha.pdf", label_p),
-        pm.plot_with_vs_no_within_alpha10(poisson_trials, poisson_summary, label_p, "poisson_4" if include_stability else "poisson_3"),
-        pm.plot_coverage_lines_width_boxplots(
-            fixed_trials[fixed_trials["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            pm.FIXED_NOMINAL_O_VALUES,
-            "fixedN21_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf", label_f),
-        pm.plot_coverage_width_line_bands(
-            fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            pm.FIXED_NOMINAL_O_VALUES,
-            "fixedN21_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf", label_f),
-        pm.plot_with_vs_no_within_alpha10(fixed_trials, fixed_summary, label_f, "fixedN21_3"),
-    ]
-    if include_stability and poisson_stability is not None:
-        outputs.append(pm.plot_randomization_stability(poisson_stability))
-    for alpha in pm.FIXED_ALPHA_PANEL_VALUES:
-        outputs.append(pm.plot_alpha_o_axis_panel(fixed_trials, fixed_summary, alpha, label_f, "fixedN21"))
-        outputs.append(pm.plot_alpha_o_axis_panel(poisson_trials, poisson_summary, alpha, label_p, "poisson"))
-        if include_baselines and baseline_trials_fixed is not None:
-            outputs.extend(pm.plot_all_baselines_by_o(
-                baseline_trials_fixed, baseline_summary_fixed, alpha, pm.O_VALUES, "fixedN21", label_f))
-            outputs.extend(pm.plot_all_baselines_by_o(
-                baseline_trials_poisson, baseline_summary_poisson, alpha, pm.O_VALUES, "poisson", label_p))
-    outputs.append(pm.plot_alpha_o_axis_panel(
-        fixed_trials, fixed_summary, 0.10, label_f, "fixedN21",
-        o_values=pm.O_VALUES_UPTO35, out_suffix="_upto35"))
-    if include_baselines:
-        outputs.append(pm.plot_alpha_o_axis_panel(
-            fixed_trials, fixed_summary, 0.10, label_f, "fixedN21",
-            o_values=pm.O_VALUES_UPTO35, out_suffix="_with_stdcp", include_stdcp=True))
-    return outputs
+def _append_stdcp_o_panels(
+    outputs: list[Path],
+    fixed_trials: pd.DataFrame,
+    fixed_summary: pd.DataFrame,
+    poisson_trials: pd.DataFrame,
+    poisson_summary: pd.DataFrame,
+    *,
+    alphas: tuple[float, ...] = (0.05, 0.10),
+    fixed_label: str = r"Fixed $N_k=21$",
+    poisson_label: str = "Poisson",
+) -> None:
+    for alpha in alphas:
+        outputs.append(
+            pm.plot_alpha_o_axis_panel(
+                fixed_trials,
+                fixed_summary,
+                alpha,
+                fixed_label,
+                "fixedN21",
+                o_values=pm.O_VALUES_UPTO35,
+                out_suffix="_with_stdcp",
+                include_stdcp=True,
+            )
+        )
+        outputs.append(
+            pm.plot_alpha_o_axis_panel(
+                poisson_trials,
+                poisson_summary,
+                alpha,
+                poisson_label,
+                "poisson",
+                o_values=pm.O_VALUES_UPTO35,
+                out_suffix="_with_stdcp",
+                include_stdcp=True,
+            )
+        )
 
 
 def _build_dgp_rf() -> list[Path]:
-    _patch_dgp("true_marg_latent_rf_gamma5p0", "dgp_true_marginal_rf")
-    pm.reset_output_dirs()
+    """Regenerate Simulations figures, summaries, and mean-width tables."""
+    prefix = "true_marg_latent_rf_gamma5p0"
+    plot_subdir = "dgp_true_marginal_rf"
     rf_label = "RF"
+    _patch_dgp(prefix, plot_subdir)
+    pm.reset_output_dirs()
     all_o = sorted(set(pm.O_VALUES_UPTO35))
     poisson_trials = pm.load_trials(pm.POISSON_DATASET, all_o)
     poisson_summary = pm.summarize_trials(poisson_trials)
     fixed_trials = pm.load_trials(pm.FIXED_DATASET, all_o)
     fixed_summary = pm.summarize_trials(fixed_trials)
-    baseline_trials_poisson = pm.load_trials(pm.POISSON_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
-    baseline_trials_fixed = pm.load_trials(pm.FIXED_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
+    baseline_trials_poisson = pm.load_trials(
+        pm.POISSON_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS
+    )
+    baseline_trials_fixed = pm.load_trials(
+        pm.FIXED_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS
+    )
     baseline_summary_poisson = pm.summarize_trials(baseline_trials_poisson)
     baseline_summary_fixed = pm.summarize_trials(baseline_trials_fixed)
     outputs: list[Path] = []
     outputs.extend(pm.write_summary_files(pm.POISSON_DATASET, poisson_trials, poisson_summary))
     outputs.extend(pm.write_summary_files(pm.FIXED_DATASET, fixed_trials, fixed_summary))
     outputs += [
-        pm.plot_coverage_lines_width_boxplots(poisson_trials, poisson_summary, pm.O_VALUES,
-            "poisson_1_dhcp_coverage_lines_width_boxplots_by_alpha.pdf", f"Poisson ({rf_label})"),
-        pm.plot_coverage_width_line_bands(poisson_summary, pm.O_VALUES,
-            "poisson_2_dhcp_coverage_width_line_bands_by_alpha.pdf", f"Poisson ({rf_label})"),
-        pm.plot_with_vs_no_within_alpha10(poisson_trials, poisson_summary, f"Poisson ({rf_label})", "poisson_3"),
+        pm.plot_coverage_lines_width_boxplots(
+            poisson_trials,
+            poisson_summary,
+            pm.O_VALUES,
+            "poisson_1_dhcp_coverage_lines_width_boxplots_by_alpha.pdf",
+            f"Poisson ({rf_label})",
+        ),
+        pm.plot_coverage_width_line_bands(
+            poisson_summary,
+            pm.O_VALUES,
+            "poisson_2_dhcp_coverage_width_line_bands_by_alpha.pdf",
+            f"Poisson ({rf_label})",
+        ),
+        pm.plot_with_vs_no_within_alpha10(
+            poisson_trials, poisson_summary, f"Poisson ({rf_label})", "poisson_3"
+        ),
         pm.plot_coverage_lines_width_boxplots(
             fixed_trials[fixed_trials["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
             fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
             pm.FIXED_NOMINAL_O_VALUES,
             "fixedN21_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf",
-            rf"Fixed $N_k=21$ ({rf_label})"),
+            rf"Fixed $N_k=21$ ({rf_label})",
+        ),
         pm.plot_coverage_width_line_bands(
             fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
             pm.FIXED_NOMINAL_O_VALUES,
             "fixedN21_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf",
-            rf"Fixed $N_k=21$ ({rf_label})"),
-        pm.plot_with_vs_no_within_alpha10(fixed_trials, fixed_summary, rf"Fixed $N_k=21$ ({rf_label})", "fixedN21_3"),
+            rf"Fixed $N_k=21$ ({rf_label})",
+        ),
+        pm.plot_with_vs_no_within_alpha10(
+            fixed_trials, fixed_summary, rf"Fixed $N_k=21$ ({rf_label})", "fixedN21_3"
+        ),
     ]
     for alpha in pm.FIXED_ALPHA_PANEL_VALUES:
-        outputs.append(pm.plot_alpha_o_axis_panel(fixed_trials, fixed_summary, alpha, rf"Fixed $N_k=21$ ({rf_label})", "fixedN21"))
-        outputs.append(pm.plot_alpha_o_axis_panel(poisson_trials, poisson_summary, alpha, f"Poisson ({rf_label})", "poisson"))
-        outputs.extend(pm.plot_all_baselines_by_o(
-            baseline_trials_fixed, baseline_summary_fixed, alpha, pm.O_VALUES, "fixedN21", rf"Fixed $N_k=21$ ({rf_label})"))
-        outputs.extend(pm.plot_all_baselines_by_o(
-            baseline_trials_poisson, baseline_summary_poisson, alpha, pm.O_VALUES, "poisson", f"Poisson ({rf_label})"))
-    outputs.append(pm.plot_alpha_o_axis_panel(
-        fixed_trials, fixed_summary, 0.10, rf"Fixed $N_k=21$ ({rf_label})", "fixedN21",
-        o_values=pm.O_VALUES_UPTO35, out_suffix="_upto35"))
-    return outputs
+        outputs.append(
+            pm.plot_alpha_o_axis_panel(
+                fixed_trials, fixed_summary, alpha, rf"Fixed $N_k=21$ ({rf_label})", "fixedN21"
+            )
+        )
+        outputs.append(
+            pm.plot_alpha_o_axis_panel(
+                poisson_trials, poisson_summary, alpha, f"Poisson ({rf_label})", "poisson"
+            )
+        )
+        outputs.extend(
+            pm.plot_all_baselines_by_o(
+                baseline_trials_fixed,
+                baseline_summary_fixed,
+                alpha,
+                pm.O_VALUES,
+                "fixedN21",
+                rf"Fixed $N_k=21$ ({rf_label})",
+            )
+        )
+        outputs.extend(
+            pm.plot_all_baselines_by_o(
+                baseline_trials_poisson,
+                baseline_summary_poisson,
+                alpha,
+                pm.O_VALUES,
+                "poisson",
+                f"Poisson ({rf_label})",
+            )
+        )
+    outputs.append(
+        pm.plot_alpha_o_axis_panel(
+            fixed_trials,
+            fixed_summary,
+            0.10,
+            rf"Fixed $N_k=21$ ({rf_label})",
+            "fixedN21",
+            o_values=pm.O_VALUES_UPTO35,
+            out_suffix="_upto35",
+        )
+    )
+    _append_stdcp_o_panels(
+        outputs,
+        fixed_trials,
+        fixed_summary,
+        poisson_trials,
+        poisson_summary,
+        alphas=(0.05, 0.10),
+        fixed_label=rf"Fixed $N_k=21$ ({rf_label})",
+        poisson_label=f"Poisson ({rf_label})",
+    )
 
+    from code.marginal.export_paper_tables_mean_width import main as _export_tables
 
-def _build_dgp_latent_gamma5() -> list[Path]:
-    prefix = "true_marg_latent_gamma5p0"
-    _patch_dgp(prefix, "dgp_true_marginal_latent_gamma5")
-    pm.reset_output_dirs()
-    all_o = sorted(set(pm.O_VALUES_UPTO35))
-    poisson_trials = pm.load_trials(pm.POISSON_DATASET, all_o)
-    poisson_summary = pm.summarize_trials(poisson_trials)
-    fixed_trials = pm.load_trials(pm.FIXED_DATASET, all_o)
-    fixed_summary = pm.summarize_trials(fixed_trials)
-    baseline_trials_poisson = pm.load_trials(pm.POISSON_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
-    baseline_trials_fixed = pm.load_trials(pm.FIXED_DATASET, pm.O_VALUES, method_keys=pm.BASELINE_METHOD_KEYS)
-    baseline_summary_poisson = pm.summarize_trials(baseline_trials_poisson)
-    baseline_summary_fixed = pm.summarize_trials(baseline_trials_fixed)
-    label_p = "Poisson"
-    label_f = r"Fixed $N_k=21$"
-    outputs: list[Path] = []
-    outputs.extend(pm.write_summary_files(pm.POISSON_DATASET, poisson_trials, poisson_summary))
-    outputs.extend(pm.write_summary_files(pm.FIXED_DATASET, fixed_trials, fixed_summary))
-    outputs += [
-        pm.plot_coverage_lines_width_boxplots(poisson_trials, poisson_summary, pm.O_VALUES,
-            "poisson_1_dhcp_coverage_lines_width_boxplots_by_alpha.pdf", label_p),
-        pm.plot_coverage_width_line_bands(poisson_summary, pm.O_VALUES,
-            "poisson_2_dhcp_coverage_width_line_bands_by_alpha.pdf", label_p),
-        pm.plot_with_vs_no_within_alpha10(poisson_trials, poisson_summary, label_p, "poisson_3"),
-        pm.plot_coverage_lines_width_boxplots(
-            fixed_trials[fixed_trials["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            pm.FIXED_NOMINAL_O_VALUES,
-            "fixedN21_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf", label_f),
-        pm.plot_coverage_width_line_bands(
-            fixed_summary[fixed_summary["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
-            pm.FIXED_NOMINAL_O_VALUES,
-            "fixedN21_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf", label_f),
-        pm.plot_with_vs_no_within_alpha10(fixed_trials, fixed_summary, label_f, "fixedN21_3"),
-    ]
-    for alpha in pm.FIXED_ALPHA_PANEL_VALUES:
-        outputs.append(pm.plot_alpha_o_axis_panel(fixed_trials, fixed_summary, alpha, label_f, "fixedN21"))
-        outputs.append(pm.plot_alpha_o_axis_panel(poisson_trials, poisson_summary, alpha, label_p, "poisson"))
-        outputs.extend(pm.plot_all_baselines_by_o(
-            baseline_trials_fixed, baseline_summary_fixed, alpha, pm.O_VALUES, "fixedN21", label_f))
-        outputs.extend(pm.plot_all_baselines_by_o(
-            baseline_trials_poisson, baseline_summary_poisson, alpha, pm.O_VALUES, "poisson", label_p))
-    outputs.append(pm.plot_alpha_o_axis_panel(
-        fixed_trials, fixed_summary, 0.10, label_f, "fixedN21",
-        o_values=pm.O_VALUES_UPTO35, out_suffix="_upto35"))
+    _export_tables()
+    tables = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "tables" / "simulations_mean_width_tables.tex"
+    if tables.exists():
+        outputs.append(tables)
     return outputs
 
 
@@ -225,24 +229,32 @@ def _build_acs() -> list[Path]:
     spec = importlib.util.spec_from_file_location("acs_plot", acs_plot)
     acs = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    acs.RESULTS_ROOT = RESULTS_ACS_MARGINAL
-    acs.PAPER_ROOT = PLOTS_MARGINAL / "acs"
-    acs.FIG_DIR = acs.PAPER_ROOT / "figures"
-    acs.SUMMARY_DIR = acs.PAPER_ROOT / "summaries"
+    spec.loader.exec_module(acs)
+    return acs.run_suite(acs.RF_YOEP_FB_MIN21_SUITE)
+
+
+def _build_acs_xgboost() -> list[Path]:
+    acs_plot = REPO_ROOT / "real_data" / "acs" / "plot_dgp_style_paper_plots.py"
+    spec = importlib.util.spec_from_file_location("acs_xgb_plot", acs_plot)
+    acs = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
     spec.loader.exec_module(acs)
     acs.RESULTS_ROOT = RESULTS_ACS_MARGINAL
-    acs.PAPER_ROOT = PLOTS_MARGINAL / "acs"
-    acs.FIG_DIR = acs.PAPER_ROOT / "figures"
-    acs.SUMMARY_DIR = acs.PAPER_ROOT / "summaries"
-    acs.main()
-    return list(acs.FIG_DIR.glob("*.pdf"))
+    acs.DING_XGB_SUITE = acs.AcsPlotSuite(
+        paper_root=PLOTS_MARGINAL / "acs" / "xgboost",
+        result_glob=f"{acs.PERMUTED_DING_XGB_PREFIX}*",
+        alpha_panel_values=(0.20,),
+        title_prefix="ACS (Ding XGBoost)",
+        include_nominal_panels=False,
+        include_upto35_panels=False,
+    )
+    return acs.run_suite(acs.DING_XGB_SUITE)
 
 
 SUITES: dict[str, Callable[[], list[Path]]] = {
-    "dgp_ols": lambda: _build_dgp_ols(include_stability=True, include_baselines=True),
     "dgp_rf": _build_dgp_rf,
-    "dgp_latent_gamma5": _build_dgp_latent_gamma5,
     "acs": _build_acs,
+    "acs_xgboost": _build_acs_xgboost,
 }
 
 
@@ -251,10 +263,10 @@ def main() -> None:
     parser.add_argument(
         "--suite",
         choices=sorted(SUITES),
-        default="dgp_ols",
-        help="Which experiment suite to plot.",
+        default="dgp_rf",
+        help="Which experiment suite to plot (default: dgp_rf).",
     )
-    parser.add_argument("--all", action="store_true", help="Run all marginal suites.")
+    parser.add_argument("--all", action="store_true", help="Run all active suites.")
     args = parser.parse_args()
     suites = list(SUITES) if args.all else [args.suite]
     for name in suites:

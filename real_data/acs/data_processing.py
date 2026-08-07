@@ -50,12 +50,13 @@ def load_and_clean_acs_pums(
     age_max: Optional[int] = 54,
     yoep_window_years: int = 2,
     yoep_min_year: Optional[int] = None,
-    min_hours: int = 20,
+    min_hours: Optional[int] = 20,
     require_work_last_year: bool = True,
     drop_nonpositive_income: bool = True,
     min_income: float = None,
     top_income_quantile: float = None,
     bottom_income_quantile: float = None,
+    drop_top_income_fraction: float = None,
     y_transform = np.log1p
 ) -> pd.DataFrame:
     """
@@ -75,10 +76,11 @@ def load_and_clean_acs_pums(
         Window for recent year of entry (default: 2 years)
     yoep_min_year : int | None
         If specified, use fixed filter YOEP >= yoep_min_year instead of a rolling window.
-    min_hours : int
-        Minimum usual hours worked (default: 20)
+    min_hours : int | None
+        Minimum usual hours worked (default: 20). Set to None to disable the
+        hours filter (missing hours are then filled with 0 for the design matrix).
     require_work_last_year : bool
-        Require work last year (default: True)
+        Require work last year (default: True). Currently unused (kept for API).
     drop_nonpositive_income : bool
         Drop non-positive incomes (default: True)
     min_income : float
@@ -87,6 +89,8 @@ def load_and_clean_acs_pums(
         If specified, keep only top X quantile by income (e.g., 0.90 for top 10%)
     bottom_income_quantile : float
         If specified, keep only bottom X quantile by income (e.g., 0.25 for bottom 25%)
+    drop_top_income_fraction : float
+        If specified, drop the top fraction of incomes as outliers (e.g., 0.02 drops top 2%)
     y_transform : callable
         Transform for income (default: log1p)
 
@@ -179,10 +183,15 @@ def load_and_clean_acs_pums(
     df = df[df['yoep'] >= yoep_cutoff]
     print(f"After recent entry filter (YOEP >= {yoep_cutoff}): {len(df)} rows")
 
-    # Labor force attachment
-    df = df[df['hours'] >= min_hours]
+    # Labor force attachment (optional)
+    if min_hours is None:
+        df['hours'] = df['hours'].fillna(0.0)
+        print(f"Hours filter disabled (NA hours → 0): {len(df)} rows")
+    else:
+        df = df[df['hours'] >= min_hours]
+        print(f"After labor force filter (hours >= {min_hours}): {len(df)} rows")
     df = df.dropna(subset=['income'])
-    print(f"After labor force filter (hours >= {min_hours}): {len(df)} rows")
+    print(f"After requiring non-missing income: {len(df)} rows")
 
     if drop_nonpositive_income:
         df = df[df['income'] > 0]
@@ -202,6 +211,22 @@ def load_and_clean_acs_pums(
             filtered_dfs.append(state_filtered)
         df = pd.concat(filtered_dfs, ignore_index=True)
         print(f"After top {int((1-top_income_quantile)*100)}% income filter (per state): {len(df)} rows across {df['state_abb'].nunique()} states")
+
+    # Drop top income outliers (applied per state)
+    if drop_top_income_fraction is not None:
+        frac = float(drop_top_income_fraction)
+        if not (0.0 < frac < 1.0):
+            raise ValueError("drop_top_income_fraction must be in (0, 1)")
+        filtered_dfs = []
+        for state in df['state_abb'].unique():
+            state_df = df[df['state_abb'] == state]
+            cap = state_df['income'].quantile(1.0 - frac)
+            filtered_dfs.append(state_df[state_df['income'] <= cap])
+        df = pd.concat(filtered_dfs, ignore_index=True)
+        print(
+            f"After dropping top {int(round(frac * 100))}% income outliers (per state): "
+            f"{len(df)} rows across {df['state_abb'].nunique()} states"
+        )
 
     # Bottom income quantile filter (applied per state)
     if bottom_income_quantile is not None:
@@ -246,7 +271,13 @@ def load_and_clean_acs_pums(
     return df
 
 
-def build_design_matrix_acs(df: pd.DataFrame) -> np.ndarray:
+def build_design_matrix_acs(
+    df: pd.DataFrame,
+    *,
+    exclude_entry_recency: bool = False,
+    exclude_cow: bool = False,
+    exclude_hours: bool = False,
+) -> np.ndarray:
     """
     Build design matrix X from cleaned ACS data.
 
@@ -254,25 +285,34 @@ def build_design_matrix_acs(df: pd.DataFrame) -> np.ndarray:
     -----------
     df : pd.DataFrame
         Cleaned ACS data
+    exclude_entry_recency : bool
+        If True, omit ``entry_recency`` (derived from YOEP) from predictors.
+        Use when the cohort is filtered on YOEP so entry timing is not also
+        used to predict income.
+    exclude_cow : bool
+        If True, omit class-of-worker (``cow``) dummies from predictors.
+    exclude_hours : bool
+        If True, omit ``hours`` from predictors (cohort may still be filtered on hours).
 
     Returns:
     --------
     np.ndarray : Design matrix of shape (n, p)
     """
-    # Create dummy variables for categorical features
     educ_dummies = pd.get_dummies(df['educ_level'], prefix='educ', drop_first=True)
     english_dummies = pd.get_dummies(df['english'], prefix='eng', drop_first=True)
-    cow_dummies = pd.get_dummies(df['cow'], prefix='cow', drop_first=True)
 
-    # Combine all features
-    X = pd.concat([
-        df[['age', 'age_sq', 'hours', 'entry_recency', 'married', 'female']],
-        educ_dummies,
-        english_dummies,
-        cow_dummies
-    ], axis=1)
+    continuous_cols = ['age', 'age_sq']
+    if not exclude_hours:
+        continuous_cols.append('hours')
+    if not exclude_entry_recency:
+        continuous_cols.append('entry_recency')
+    continuous_cols.extend(['married', 'female'])
 
-    return X.values
+    parts = [df[continuous_cols], educ_dummies, english_dummies]
+    if not exclude_cow:
+        parts.append(pd.get_dummies(df['cow'], prefix='cow', drop_first=True))
+
+    return pd.concat(parts, axis=1).values
 
 
 def create_acs_hierarchical_data(

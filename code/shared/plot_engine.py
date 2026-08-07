@@ -33,7 +33,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
 RESULTS_ROOT = REPO_ROOT / "results_marginal" / "dgp"
 PAPER_PARENT = REPO_ROOT / "plots_marginal"
-PAPER_ROOT = PAPER_PARENT / "dgp_true_marginal"
+PAPER_ROOT = PAPER_PARENT / "dgp_true_marginal_rf"
 FIG_DIR = PAPER_ROOT / "figures"
 SUMMARY_DIR = PAPER_ROOT / "summaries"
 
@@ -45,7 +45,7 @@ FIXED_NOMINAL_O_VALUES = [0, 10, 20]
 FIXED_ALPHA_PANEL_VALUES = [0.05, 0.10]
 ALPHA_FOR_WITHIN_COMPARISON = 0.1
 NOMINAL_COVERAGE_MAX = 0.90
-# Full miscoverage grid used for coverage_lines_width_boxplots (matches dgp_true_marginal results).
+# Full miscoverage grid used for coverage_lines_width_boxplots (matches dgp_true_marginal_rf results).
 PAPER_ALPHA_GRID = [0.05, 0.075, 0.10, 0.125, 0.15, 0.175, 0.20, 0.225, 0.25]
 PAPER_ALPHA_GRID_STR = ",".join(str(a) for a in PAPER_ALPHA_GRID)
 STABILITY_ALPHAS = [0.20, 0.15, 0.10]
@@ -73,20 +73,23 @@ O_MARKERS = {
 }
 
 METHOD_COLORS = {
-    "D-HCP": "#0072B2",
-    "D-HCP no within": "#CC79A7",
+    "GHCP": "#0072B2",
+    "GHCP no within": "#CC79A7",
+    "GHCP local": "#E69F00",
     "HCP": "#D55E00",
     "Std-CP": "#009E73",
 }
 METHOD_LINESTYLES = {
-    "D-HCP": "-",
-    "D-HCP no within": (0, (4, 1.5, 1.5, 1.5)),
+    "GHCP": "-",
+    "GHCP no within": (0, (4, 1.5, 1.5, 1.5)),
+    "GHCP local": (0, (2, 1.5)),
     "HCP": "--",
     "Std-CP": "-.",
 }
 METHOD_MARKERS = {
-    "D-HCP": "o",
-    "D-HCP no within": "v",
+    "GHCP": "o",
+    "GHCP no within": "v",
+    "GHCP local": "D",
     "HCP": "s",
     "Std-CP": "^",
 }
@@ -111,36 +114,46 @@ STABILITY_COLORS = {
 }
 
 METHOD_KEYS = {
-    "donor_hcp_randomized": "D-HCP",
-    "donor_hcp_no_within": "D-HCP no within",
+    "donor_hcp_randomized": "GHCP",
+    "donor_hcp_no_within": "GHCP no within",
+    "donor_hcp_local": "GHCP local",
     "hcp": "HCP",
     "stdcp": "Std-CP",
 }
 
 BASELINE_METHOD_KEYS = {
-    "donor_hcp_randomized": "D-HCP",
+    "donor_hcp_randomized": "GHCP",
     "hcp": "HCP",
     "pool": "Pooling",
     "sub": "Subsampling",
     "rep": "Repeated",
 }
 
+DHCP_SHCP_HCP_KEYS = {
+    "donor_hcp_randomized": "GHCP",
+    "sample_hcp_randomized": "S-HCP",
+    "hcp": "HCP",
+}
+
 BASELINE_COLORS = {
-    "D-HCP": "#0072B2",
+    "GHCP": "#0072B2",
+    "S-HCP": "#009E73",
     "HCP": "#D55E00",
     "Pooling": "#666666",
     "Subsampling": "#999999",
     "Repeated": "#bbbbbb",
 }
 BASELINE_MARKERS = {
-    "D-HCP": "o",
+    "GHCP": "o",
+    "S-HCP": "s",
     "HCP": "s",
     "Pooling": "^",
     "Subsampling": "D",
     "Repeated": "v",
 }
 BASELINE_LINESTYLES = {
-    "D-HCP": "-",
+    "GHCP": "-",
+    "S-HCP": "-.",
     "HCP": "--",
     "Pooling": "-.",
     "Subsampling": (0, (3, 1, 1, 1)),
@@ -155,6 +168,12 @@ FONT_TITLE = 36
 FONT_LEGEND = 34
 FONT_GROUP_AXIS = 34
 FONT_METHODS_XLABEL = 42
+# Stacked coverage-over-width panels (e.g. all-baselines, GHCP nominal grids).
+STACKED_FONT_TICK = 42
+STACKED_FONT_LABEL = 46
+STACKED_FONT_TITLE = 50
+STACKED_FONT_GROUP_AXIS = 44
+STACKED_FONT_METHODS_XLABEL = 52
 PLOT_BORDER_COLOR = "#666666"
 PLOT_BORDER_WIDTH = 1.1
 BOX_EDGE_COLOR = INK_COLOR
@@ -166,7 +185,7 @@ LINEWIDTH = 3.8
 MARKERSIZE = 10.0
 CAPSIZE = 6
 X_LABEL_NOMINAL = r"Nominal coverage, $1-\alpha$"
-X_LABEL_TARGET_O = r"Target group size, $o$"
+X_LABEL_TARGET_O = r"Test group size, $o$"
 Y_LABEL_WIDTH = "Prediction Set Width"
 # Width boxplot axes use this quantile instead of the raw maximum so a few very
 # wide finite intervals do not compress the boxes. Set to 1.0 to show all widths.
@@ -176,6 +195,17 @@ BOX_WIDTH_NOMINAL = 0.30
 BOX_WIDTH_O_AXIS = 1.9
 NOMINAL_BOX_GROUP_SPACING = 2.4
 SE_VISUAL_MULTIPLIER = 1.0
+
+
+def coverage_standard_error(cov: np.ndarray) -> float:
+    """Binomial SE for the mean coverage across B replicate-level indicators."""
+    cov = np.asarray(cov, dtype=float)
+    cov = cov[np.isfinite(cov)]
+    n = len(cov)
+    if n == 0:
+        return float("nan")
+    p_hat = float(np.mean(cov))
+    return float(np.sqrt(p_hat * (1.0 - p_hat) / n))
 
 
 def _alpha_from_path(path: Path) -> float:
@@ -267,7 +297,7 @@ def _summary_for_group(group: pd.DataFrame) -> pd.Series:
     finite_width = group["width"].replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
     p_hat = float(np.mean(cov)) if len(cov) else np.nan
     cov_std = float(np.std(cov, ddof=1)) if len(cov) > 1 else np.nan
-    cov_se = float(np.sqrt(p_hat * (1.0 - p_hat) / len(cov))) if len(cov) else np.nan
+    cov_se = coverage_standard_error(cov)
     width_std = float(np.std(finite_width, ddof=1)) if len(finite_width) > 1 else np.nan
     width_se = width_std / np.sqrt(len(finite_width)) if len(finite_width) > 1 else np.nan
     n_width_total = int(np.sum(~pd.isna(width_all)))
@@ -377,10 +407,55 @@ def _accessible_whiskerprops(color: str) -> dict:
     return {"color": color, "linewidth": 1.5}
 
 
-def _style_axis(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
-    ax.set_xlabel(xlabel, fontsize=FONT_LABEL, color=INK_COLOR)
-    ax.set_ylabel(ylabel, fontsize=FONT_LABEL, color=INK_COLOR)
-    ax.tick_params(axis="both", labelsize=FONT_TICK, colors=INK_COLOR)
+def _stacked_panel_fonts() -> dict[str, int]:
+    return {
+        "tick": STACKED_FONT_TICK,
+        "label": STACKED_FONT_LABEL,
+        "title": STACKED_FONT_TITLE,
+        "group": STACKED_FONT_GROUP_AXIS,
+        "methods_xlabel": STACKED_FONT_METHODS_XLABEL,
+    }
+
+
+def _scaled_fonts(base: dict[str, int], scale: float) -> dict[str, int]:
+    if scale == 1.0:
+        return base
+    return {k: int(round(v * scale)) for k, v in base.items()}
+
+
+def _all_baselines_fonts(*, stacked: bool, scale: float = 1.0) -> dict[str, int]:
+    base = _stacked_panel_fonts() if stacked else {
+        "tick": FONT_TICK,
+        "label": FONT_LABEL,
+        "title": FONT_TITLE,
+        "group": FONT_GROUP_AXIS,
+        "methods_xlabel": FONT_METHODS_XLABEL,
+    }
+    return _scaled_fonts(base, scale)
+
+
+def _all_baselines_axis_titles(title_prefix: str, *, short: bool) -> tuple[str, str]:
+    if short:
+        return f"{title_prefix}: Coverage", f"{title_prefix}: Width"
+    return (
+        f"{title_prefix}: Coverage (all methods)",
+        f"{title_prefix}: Prediction set width (all methods)",
+    )
+
+
+def _style_axis(
+    ax: plt.Axes,
+    xlabel: str,
+    ylabel: str,
+    *,
+    tick: int | None = None,
+    label: int | None = None,
+) -> None:
+    tick_size = FONT_TICK if tick is None else tick
+    label_size = FONT_LABEL if label is None else label
+    ax.set_xlabel(xlabel, fontsize=label_size, color=INK_COLOR)
+    ax.set_ylabel(ylabel, fontsize=label_size, color=INK_COLOR)
+    ax.tick_params(axis="both", labelsize=tick_size, colors=INK_COLOR)
     ax.grid(True, linestyle="--", linewidth=0.9, alpha=0.38, color="#888888")
     _apply_plot_border(ax)
 
@@ -395,6 +470,40 @@ def _error_band(ax: plt.Axes, x: np.ndarray, y: np.ndarray, se: np.ndarray, colo
     if np.any(finite):
         band = SE_VISUAL_MULTIPLIER * se[finite]
         ax.fill_between(x[finite], y[finite] - band, y[finite] + band, color=color, alpha=alpha, linewidth=0)
+
+
+def _plot_coverage_line_with_band(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    se: np.ndarray,
+    color: str,
+    *,
+    label: str | None = None,
+    marker: str = "o",
+    linestyle: str = "-",
+    alpha_band: float = 0.12,
+) -> None:
+    """Shaded ±SE band plus line, markers, and SE whiskers at the same ±SE."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    se = np.asarray(se, dtype=float)
+    _error_band(ax, x, y, se, color, alpha=alpha_band)
+    ax.errorbar(
+        x,
+        y,
+        yerr=SE_VISUAL_MULTIPLIER * se,
+        color=color,
+        marker=marker,
+        linestyle=linestyle,
+        linewidth=LINEWIDTH,
+        markersize=MARKERSIZE,
+        capsize=CAPSIZE,
+        markeredgecolor=INK_COLOR,
+        markeredgewidth=0.6,
+        label=label,
+        zorder=3,
+    )
 
 
 def _finite_width_array(series: pd.Series) -> np.ndarray:
@@ -449,49 +558,33 @@ def plot_coverage_lines_width_boxplots(
     df = _filter_alpha_grid(df)
     summary = _filter_alpha_grid(summary)
     nominal_values = sorted(summary["nominal_coverage"].dropna().unique())
+    sf = _stacked_panel_fonts()
     fig, axes = plt.subplots(2, 1, figsize=(26.0, 18.5))
 
     ax_cov, ax_width = axes
-    dhcp_summary = summary[summary["method"] == "D-HCP"]
+    dhcp_summary = summary[summary["method"] == "GHCP"]
     for o in o_values:
         sub = dhcp_summary[dhcp_summary["o"] == o].sort_values("nominal_coverage")
         x = sub["nominal_coverage"].to_numpy(dtype=float)
         y = sub["coverage_mean"].to_numpy(dtype=float)
         se = sub["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-        _error_band(ax_cov, x, y, se, O_COLORS[o], alpha=0.12)
-        ax_cov.errorbar(
-            x,
-            y,
-            yerr=SE_VISUAL_MULTIPLIER * se,
-            linestyle="-",
+        _plot_coverage_line_with_band(
+            ax_cov, x, y, se, O_COLORS[o],
+            label=f"GHCP, o={o}",
             marker=O_MARKERS.get(o, "o"),
-            linewidth=LINEWIDTH,
-            markersize=MARKERSIZE,
-            capsize=CAPSIZE,
-            color=O_COLORS[o],
-            markeredgecolor=INK_COLOR,
-            markeredgewidth=0.6,
-            label=f"D-HCP, o={o}",
+            linestyle="-",
         )
 
     hcp_summary = _dedupe_hcp(summary).sort_values("nominal_coverage")
     x_hcp = hcp_summary["nominal_coverage"].to_numpy(dtype=float)
     y_hcp = hcp_summary["coverage_mean"].to_numpy(dtype=float)
     se_hcp = hcp_summary["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-    _error_band(ax_cov, x_hcp, y_hcp, se_hcp, METHOD_COLORS["HCP"], alpha=0.12)
-    ax_cov.errorbar(
-        x_hcp,
-        y_hcp,
-        yerr=SE_VISUAL_MULTIPLIER * se_hcp,
-        linestyle=METHOD_LINESTYLES["HCP"],
-        marker=METHOD_MARKERS["HCP"],
-        linewidth=LINEWIDTH,
-        markersize=MARKERSIZE,
-        capsize=CAPSIZE,
-        color=METHOD_COLORS["HCP"],
-        markeredgecolor=INK_COLOR,
-        markeredgewidth=0.6,
+    _plot_coverage_line_with_band(
+        ax_cov, x_hcp, y_hcp, se_hcp, METHOD_COLORS["HCP"],
         label="HCP",
+        marker=METHOD_MARKERS["HCP"],
+        linestyle=METHOD_LINESTYLES["HCP"],
+        alpha_band=0.10,
     )
     ax_cov.plot(
         nominal_values,
@@ -502,10 +595,10 @@ def plot_coverage_lines_width_boxplots(
         label="Nominal",
         zorder=1,
     )
-    _style_axis(ax_cov, X_LABEL_NOMINAL, "Empirical coverage")
+    _style_axis(ax_cov, X_LABEL_NOMINAL, "Empirical coverage", tick=sf["tick"], label=sf["label"])
     _set_nominal_ticks(ax_cov, nominal_values)
     ax_cov.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
-    ax_cov.set_title(rf"{title_prefix}: coverage over $1-\alpha$", fontsize=FONT_TITLE, pad=12)
+    ax_cov.set_title(rf"{title_prefix}: coverage over $1-\alpha$", fontsize=sf["title"], pad=16)
 
     positions = np.arange(len(nominal_values), dtype=float) * NOMINAL_BOX_GROUP_SPACING
     n_box_series = len(o_values) + 1
@@ -515,7 +608,7 @@ def plot_coverage_lines_width_boxplots(
     for nominal_idx, nominal in enumerate(nominal_values):
         for o_idx, o in enumerate(o_values):
             vals = _finite_width_array(df[
-                (df["method"] == "D-HCP")
+                (df["method"] == "GHCP")
                 & np.isclose(df["nominal_coverage"], nominal)
                 & (df["o"] == o)
             ]["width"])
@@ -563,15 +656,15 @@ def plot_coverage_lines_width_boxplots(
     ax_width.set_xticks(positions)
     ax_width.set_xticklabels([_nominal_label(nominal) for nominal in nominal_values], rotation=35, ha="right")
     ax_width.set_xlim(positions[0] + offsets[0] - 0.5, positions[-1] + offsets[-1] + 0.5)
-    _style_axis(ax_width, X_LABEL_NOMINAL, Y_LABEL_WIDTH)
+    _style_axis(ax_width, X_LABEL_NOMINAL, Y_LABEL_WIDTH, tick=sf["tick"], label=sf["label"])
     width_upper = _width_axis_upper_from_box_groups(width_box_groups)
     if width_upper is not None:
         ax_width.set_ylim(0.0, width_upper)
-    ax_width.set_title(rf"{title_prefix}: widths over $1-\alpha$", fontsize=FONT_TITLE, pad=12)
+    ax_width.set_title(rf"{title_prefix}: widths over $1-\alpha$", fontsize=sf["title"], pad=16)
 
     handles = [
         Line2D([0], [0], color=O_COLORS[o], marker=O_MARKERS.get(o, "o"), linestyle="-",
-               linewidth=LINEWIDTH, label=f"D-HCP, o={o}")
+               linewidth=LINEWIDTH, label=f"GHCP, o={o}")
         for o in o_values
     ]
     handles.append(Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
@@ -593,20 +686,21 @@ def plot_coverage_width_line_bands(
 ) -> Path:
     summary = _filter_alpha_grid(summary)
     nominal_values = sorted(summary["nominal_coverage"].dropna().unique())
+    sf = _stacked_panel_fonts()
     fig, axes = plt.subplots(2, 1, figsize=(26.0, 18.0))
 
     for ax, metric, se_col, ylabel, title in [
         (axes[0], "coverage_mean", "coverage_se", "Empirical coverage", "Coverage with standard-error bands"),
         (axes[1], "width_mean", "width_se", "Mean interval width", "Width with standard-error bands"),
     ]:
-        dhcp = summary[summary["method"] == "D-HCP"]
+        dhcp = summary[summary["method"] == "GHCP"]
         for o in o_values:
             sub = dhcp[dhcp["o"] == o].sort_values("nominal_coverage")
             x = sub["nominal_coverage"].to_numpy(dtype=float)
             y = sub[metric].to_numpy(dtype=float)
             se = sub[se_col].fillna(0.0).to_numpy(dtype=float)
             _error_band(ax, x, y, se, O_COLORS[o])
-            ax.plot(x, y, marker="o", linestyle="-", linewidth=LINEWIDTH, markersize=MARKERSIZE, color=O_COLORS[o], label=f"D-HCP, o={o}")
+            ax.plot(x, y, marker="o", linestyle="-", linewidth=LINEWIDTH, markersize=MARKERSIZE, color=O_COLORS[o], label=f"GHCP, o={o}")
 
         hcp = _dedupe_hcp(summary).sort_values("nominal_coverage")
         x = hcp["nominal_coverage"].to_numpy(dtype=float)
@@ -623,9 +717,9 @@ def plot_coverage_width_line_bands(
             width_upper = _managed_width_upper(finite_y)
             if width_upper is not None:
                 ax.set_ylim(0.0, width_upper)
-        _style_axis(ax, X_LABEL_NOMINAL, ylabel)
+        _style_axis(ax, X_LABEL_NOMINAL, ylabel, tick=sf["tick"], label=sf["label"])
         _set_nominal_ticks(ax, nominal_values)
-        ax.set_title(f"{title_prefix}: {title}", fontsize=FONT_TITLE, pad=12)
+        ax.set_title(f"{title_prefix}: {title}", fontsize=sf["title"], pad=16)
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(handles), **_legend_kwargs())
@@ -655,58 +749,36 @@ def plot_alpha_o_axis_panel(
     fig, axes = plt.subplots(1, 2, figsize=(24.0, 8.8))
     ax_cov, ax_width = axes
 
-    dhcp = s_alpha[(s_alpha["method"] == "D-HCP") & (s_alpha["o"].isin(o_values))].sort_values("o")
+    dhcp = s_alpha[(s_alpha["method"] == "GHCP") & (s_alpha["o"].isin(o_values))].sort_values("o")
     stdcp = s_alpha[(s_alpha["method"] == "Std-CP") & (s_alpha["o"].isin(o_values))].sort_values("o")
     hcp = s_alpha[(s_alpha["method"] == "HCP") & (s_alpha["o"] == O_VALUES[0])]
     if dhcp.empty or hcp.empty:
-        raise ValueError(f"Missing D-HCP or HCP rows for fixed-N alpha={alpha}")
+        raise ValueError(f"Missing GHCP or HCP rows for fixed-N alpha={alpha}")
 
-    _error_band(
+    dhcp_style = _method_style("GHCP")
+    _plot_coverage_line_with_band(
         ax_cov,
         dhcp["o"].to_numpy(dtype=float),
         dhcp["coverage_mean"].to_numpy(dtype=float),
         dhcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
-        METHOD_COLORS["D-HCP"],
-        alpha=0.10,
-    )
-    dhcp_style = _method_style("D-HCP")
-    ax_cov.errorbar(
-        dhcp["o"],
-        dhcp["coverage_mean"],
-        yerr=SE_VISUAL_MULTIPLIER * dhcp["coverage_se"],
-        color=dhcp_style["color"],
+        dhcp_style["color"],
+        label="GHCP",
         marker=dhcp_style["marker"],
         linestyle=dhcp_style["linestyle"],
-        linewidth=LINEWIDTH,
-        markersize=MARKERSIZE,
-        capsize=CAPSIZE,
-        markeredgecolor=INK_COLOR,
-        markeredgewidth=0.6,
-        label="D-HCP",
+        alpha_band=0.10,
     )
     if include_stdcp and not stdcp.empty:
         stdcp_style = _method_style("Std-CP")
-        _error_band(
+        _plot_coverage_line_with_band(
             ax_cov,
             stdcp["o"].to_numpy(dtype=float),
             stdcp["coverage_mean"].to_numpy(dtype=float),
             stdcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
             stdcp_style["color"],
-            alpha=0.10,
-        )
-        ax_cov.errorbar(
-            stdcp["o"],
-            stdcp["coverage_mean"],
-            yerr=SE_VISUAL_MULTIPLIER * stdcp["coverage_se"],
-            color=stdcp_style["color"],
+            label="Std-CP",
             marker=stdcp_style["marker"],
             linestyle=stdcp_style["linestyle"],
-            linewidth=LINEWIDTH,
-            markersize=MARKERSIZE,
-            capsize=CAPSIZE,
-            markeredgecolor=INK_COLOR,
-            markeredgewidth=0.6,
-            label="Std-CP",
+            alpha_band=0.10,
         )
     hcp_cov = float(hcp["coverage_mean"].iloc[0])
     hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
@@ -735,7 +807,7 @@ def plot_alpha_o_axis_panel(
     stdcp_offset = 0.75
     box_width = BOX_WIDTH_O_AXIS * (0.62 if include_stdcp else 1.0)
     for o in o_values:
-        vals = _finite_width_array(d_alpha[(d_alpha["method"] == "D-HCP") & (d_alpha["o"] == o)]["width"])
+        vals = _finite_width_array(d_alpha[(d_alpha["method"] == "GHCP") & (d_alpha["o"] == o)]["width"])
         if len(vals):
             width_box_groups.append(vals)
             ax_width.boxplot(
@@ -745,9 +817,9 @@ def plot_alpha_o_axis_panel(
                 patch_artist=True,
                 showfliers=False,
                 medianprops=_accessible_medianprops(),
-                whiskerprops=_accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
-                capprops=_accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
-                boxprops=_accessible_boxprops(METHOD_COLORS["D-HCP"], alpha=0.68),
+                whiskerprops=_accessible_whiskerprops(METHOD_COLORS["GHCP"]),
+                capprops=_accessible_whiskerprops(METHOD_COLORS["GHCP"]),
+                boxprops=_accessible_boxprops(METHOD_COLORS["GHCP"], alpha=0.68),
             )
         if include_stdcp:
             vals_std = _finite_width_array(d_alpha[(d_alpha["method"] == "Std-CP") & (d_alpha["o"] == o)]["width"])
@@ -790,8 +862,8 @@ def plot_alpha_o_axis_panel(
     ax_width.set_title("Prediction Set Width", fontsize=FONT_TITLE, pad=12)
 
     handles = [
-        Line2D([0], [0], color=METHOD_COLORS["D-HCP"], marker=METHOD_MARKERS["D-HCP"],
-               linestyle=METHOD_LINESTYLES["D-HCP"], linewidth=LINEWIDTH, label="D-HCP"),
+        Line2D([0], [0], color=METHOD_COLORS["GHCP"], marker=METHOD_MARKERS["GHCP"],
+               linestyle=METHOD_LINESTYLES["GHCP"], linewidth=LINEWIDTH, label="GHCP"),
         Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
                linestyle=METHOD_LINESTYLES["HCP"], linewidth=LINEWIDTH, label="HCP"),
         Line2D([0], [0], color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal"),
@@ -828,7 +900,7 @@ def _baseline_tick_label(method: str) -> str:
 
 
 def _all_baselines_axis_layout(o_values: list[int]) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Compact D-HCP positions by o; baselines in a spaced cluster to the right."""
+    """Compact GHCP positions by o; baselines in a spaced cluster to the right."""
     dhcp_positions = np.arange(len(o_values), dtype=float) * DHCP_INNER_SPACING
     cluster_start = float(dhcp_positions[-1]) + BASELINE_CLUSTER_GAP
     baseline_positions = cluster_start + np.arange(len(BASELINE_STATIC_METHODS), dtype=float) * BASELINE_INNER_SPACING
@@ -846,30 +918,37 @@ def _style_all_baselines_xaxis(
     o_values: list[int],
     *,
     show_group_labels: bool = True,
+    fonts: dict[str, int] | None = None,
 ) -> None:
-    """Slanted o=/baseline ticks; optional D-HCP group label and Methods xlabel."""
+    """Slanted o=/baseline ticks; optional GHCP group label and Methods xlabel."""
+    fonts = fonts or {
+        "tick": FONT_TICK,
+        "label": FONT_LABEL,
+        "group": FONT_GROUP_AXIS,
+        "methods_xlabel": FONT_METHODS_XLABEL,
+    }
     dhcp_positions, baseline_positions, tick_labels = _all_baselines_axis_layout(o_values)
     margin_left = 0.55
     margin_right = 0.55
     ax.set_xticks(np.concatenate([dhcp_positions, baseline_positions]))
     ax.set_xlim(float(dhcp_positions[0]) - margin_left, float(baseline_positions[-1]) + margin_right)
     if show_group_labels:
-        ax.set_xticklabels(tick_labels, rotation=TICK_SLANT_DEG, ha="right")
-        ax.tick_params(axis="x", pad=6)
+        ax.set_xticklabels(tick_labels, rotation=TICK_SLANT_DEG, ha="right", fontsize=fonts["tick"])
+        ax.tick_params(axis="x", pad=8, labelsize=fonts["tick"])
         group_trans = ax.get_xaxis_transform()
         dhcp_center = 0.5 * (float(dhcp_positions[0]) + float(dhcp_positions[-1]))
         ax.text(
             dhcp_center,
             BASELINE_GROUP_LABEL_Y,
-            "D-HCP",
+            "GHCP",
             transform=group_trans,
             ha="center",
             va="top",
-            fontsize=FONT_GROUP_AXIS,
+            fontsize=fonts["group"],
             rotation=0,
             clip_on=False,
         )
-        ax.set_xlabel(X_LABEL_METHOD, fontsize=FONT_METHODS_XLABEL, labelpad=58)
+        ax.set_xlabel(X_LABEL_METHOD, fontsize=fonts["methods_xlabel"], labelpad=62)
     else:
         ax.set_xticklabels([])
         ax.tick_params(axis="x", pad=4, labelbottom=False)
@@ -925,8 +1004,11 @@ def _draw_all_baselines_coverage_ax(
     summary: pd.DataFrame,
     alpha: float,
     o_values: list[int],
+    *,
+    fonts: dict[str, int] | None = None,
 ) -> None:
     """Draw mean coverage with SE on an existing axes."""
+    fonts = fonts or {"tick": FONT_TICK, "label": FONT_LABEL}
     s = summary[
         np.isclose(summary["alpha"], alpha)
         & summary["o"].isin(o_values + [BASELINE_STATIC_O])
@@ -936,14 +1018,14 @@ def _draw_all_baselines_coverage_ax(
 
     _, baseline_positions, _ = _all_baselines_axis_layout(o_values)
     o_to_pos = _dhcp_position_map(o_values)
-    dhcp_color = BASELINE_COLORS["D-HCP"]
+    dhcp_color = BASELINE_COLORS["GHCP"]
 
-    dhcp = s[s["method"] == "D-HCP"].sort_values("o")
+    dhcp = s[s["method"] == "GHCP"].sort_values("o")
     if not dhcp.empty:
         x = np.array([o_to_pos[int(o)] for o in dhcp["o"]], dtype=float)
         y = dhcp["coverage_mean"].to_numpy(dtype=float)
         se = dhcp["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-        ds = _baseline_style("D-HCP")
+        ds = _baseline_style("GHCP")
         _plot_coverage_mean_with_thick_hbar(
             ax, x, y, se, ds["color"], connect=True, marker=ds["marker"], linestyle=ds["linestyle"],
         )
@@ -961,8 +1043,8 @@ def _draw_all_baselines_coverage_ax(
 
     ax.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
     ax.set_ylim(_coverage_ylim_lower(alpha), 1.02)
-    ax.set_ylabel("Empirical coverage", fontsize=FONT_LABEL)
-    ax.tick_params(axis="both", labelsize=FONT_TICK)
+    ax.set_ylabel("Empirical coverage", fontsize=fonts["label"])
+    ax.tick_params(axis="both", labelsize=fonts["tick"])
     ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
     _apply_plot_border(ax)
 
@@ -974,8 +1056,10 @@ def _draw_all_baselines_width_ax(
     o_values: list[int],
     *,
     width_col: str = "width",
+    fonts: dict[str, int] | None = None,
 ) -> None:
     """Draw width boxplots on an existing axes; returns nothing."""
+    fonts = fonts or {"tick": FONT_TICK, "label": FONT_LABEL}
     d = df[np.isclose(df["alpha"], alpha) & df["o"].isin(o_values + [BASELINE_STATIC_O])].copy()
     if d.empty:
         raise ValueError(f"No rows for alpha={alpha}")
@@ -983,10 +1067,10 @@ def _draw_all_baselines_width_ax(
     _, baseline_positions, _ = _all_baselines_axis_layout(o_values)
     o_to_pos = _dhcp_position_map(o_values)
     width_box_groups: list[np.ndarray] = []
-    dhcp_color = BASELINE_COLORS["D-HCP"]
+    dhcp_color = BASELINE_COLORS["GHCP"]
 
     for o in o_values:
-        vals = _finite_width_array(d[(d["method"] == "D-HCP") & (d["o"] == o)][width_col])
+        vals = _finite_width_array(d[(d["method"] == "GHCP") & (d["o"] == o)][width_col])
         if len(vals) == 0:
             continue
         width_box_groups.append(vals)
@@ -1026,8 +1110,8 @@ def _draw_all_baselines_width_ax(
     width_upper = _width_axis_upper_from_box_groups(width_box_groups)
     if width_upper is not None:
         ax.set_ylim(0.0, width_upper)
-    ax.set_ylabel(Y_LABEL_WIDTH, fontsize=FONT_LABEL)
-    ax.tick_params(axis="both", labelsize=FONT_TICK)
+    ax.set_ylabel(Y_LABEL_WIDTH, fontsize=fonts["label"])
+    ax.tick_params(axis="both", labelsize=fonts["tick"])
     ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
     _apply_plot_border(ax)
 
@@ -1038,12 +1122,18 @@ def plot_all_baselines_coverage_by_o(
     o_values: list[int],
     out_name: str,
     title_prefix: str,
+    *,
+    short_titles: bool = False,
+    font_scale: float = 1.0,
+    panel_fig_height: float = 10.5,
 ) -> Path:
-    """Mean coverage with SE: D-HCP at each o; other baselines plotted once."""
-    fig, ax = plt.subplots(figsize=(28.0, 10.5))
-    _draw_all_baselines_coverage_ax(ax, summary, alpha, o_values)
-    _style_all_baselines_xaxis(ax, o_values)
-    ax.set_title(f"{title_prefix}: Coverage (all methods)", fontsize=FONT_TITLE, pad=14)
+    """Mean coverage with SE: GHCP at each o; other baselines plotted once."""
+    fonts = _all_baselines_fonts(stacked=False, scale=font_scale)
+    cov_title, _ = _all_baselines_axis_titles(title_prefix, short=short_titles)
+    fig, ax = plt.subplots(figsize=(28.0, panel_fig_height))
+    _draw_all_baselines_coverage_ax(ax, summary, alpha, o_values, fonts=fonts)
+    _style_all_baselines_xaxis(ax, o_values, fonts=fonts)
+    ax.set_title(cov_title, fontsize=fonts["title"], pad=14)
     fig.subplots_adjust(bottom=0.28)
     fig.tight_layout(rect=[0, 0.08, 1, 1])
     out = FIG_DIR / out_name
@@ -1061,14 +1151,19 @@ def plot_all_baselines_width_by_o(
     *,
     width_col: str = "width",
     y_formatter=None,
+    short_titles: bool = False,
+    font_scale: float = 1.0,
+    panel_fig_height: float = 10.5,
 ) -> Path:
-    """Width boxplots: D-HCP at each o; o-invariant baselines plotted once."""
-    fig, ax = plt.subplots(figsize=(28.0, 10.5))
-    _draw_all_baselines_width_ax(ax, df, alpha, o_values, width_col=width_col)
+    """Width boxplots: GHCP at each o; o-invariant baselines plotted once."""
+    fonts = _all_baselines_fonts(stacked=False, scale=font_scale)
+    _, width_title = _all_baselines_axis_titles(title_prefix, short=short_titles)
+    fig, ax = plt.subplots(figsize=(28.0, panel_fig_height))
+    _draw_all_baselines_width_ax(ax, df, alpha, o_values, width_col=width_col, fonts=fonts)
     if y_formatter is not None:
         ax.yaxis.set_major_formatter(y_formatter)
-    _style_all_baselines_xaxis(ax, o_values)
-    ax.set_title(f"{title_prefix}: Prediction set width (all methods)", fontsize=FONT_TITLE, pad=14)
+    _style_all_baselines_xaxis(ax, o_values, fonts=fonts)
+    ax.set_title(width_title, fontsize=fonts["title"], pad=14)
     fig.subplots_adjust(bottom=0.28)
     fig.tight_layout(rect=[0, 0.08, 1, 1])
     out = FIG_DIR / out_name
@@ -1087,21 +1182,30 @@ def plot_all_baselines_stacked_by_o(
     *,
     width_col: str = "width",
     y_formatter=None,
+    short_titles: bool = False,
+    font_scale: float = 1.0,
+    stacked_fig_height: float = 20.0,
+    panel_fig_height: float = 10.5,
 ) -> Path:
     """Coverage (top) and width (bottom) all-baselines panels in one figure."""
-    fig, (ax_cov, ax_width) = plt.subplots(2, 1, figsize=(28.0, 20.0), sharex=True)
-    _draw_all_baselines_coverage_ax(ax_cov, summary, alpha, o_values)
-    _style_all_baselines_xaxis(ax_cov, o_values, show_group_labels=False)
-    ax_cov.set_title(f"{title_prefix}: Coverage (all methods)", fontsize=FONT_TITLE, pad=14)
+    sf = _all_baselines_fonts(stacked=True, scale=font_scale)
+    cov_title, width_title = _all_baselines_axis_titles(title_prefix, short=short_titles)
+    fig, (ax_cov, ax_width) = plt.subplots(
+        2, 1, figsize=(28.0, stacked_fig_height), sharex=True,
+        gridspec_kw={"height_ratios": [1.0, 1.15]},
+    )
+    _draw_all_baselines_coverage_ax(ax_cov, summary, alpha, o_values, fonts=sf)
+    _style_all_baselines_xaxis(ax_cov, o_values, show_group_labels=False, fonts=sf)
+    ax_cov.set_title(cov_title, fontsize=sf["title"], pad=18)
 
-    _draw_all_baselines_width_ax(ax_width, df, alpha, o_values, width_col=width_col)
+    _draw_all_baselines_width_ax(ax_width, df, alpha, o_values, width_col=width_col, fonts=sf)
     if y_formatter is not None:
         ax_width.yaxis.set_major_formatter(y_formatter)
-    _style_all_baselines_xaxis(ax_width, o_values)
-    ax_width.set_title(f"{title_prefix}: Prediction set width (all methods)", fontsize=FONT_TITLE, pad=14)
+    _style_all_baselines_xaxis(ax_width, o_values, fonts=sf)
+    ax_width.set_title(width_title, fontsize=sf["title"], pad=18)
 
-    fig.subplots_adjust(bottom=0.16, hspace=0.28)
-    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.subplots_adjust(bottom=0.20, hspace=0.38)
+    fig.tight_layout(rect=[0, 0.05, 1, 1])
     out = FIG_DIR / out_name
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
     plt.close(fig)
@@ -1118,8 +1222,18 @@ def plot_all_baselines_by_o(
     *,
     width_col: str = "width",
     y_formatter=None,
+    short_titles: bool = False,
+    font_scale: float = 1.0,
+    stacked_fig_height: float = 20.0,
+    panel_fig_height: float = 10.5,
 ) -> list[Path]:
     tag = _plot_tag(alpha)
+    style = {
+        "short_titles": short_titles,
+        "font_scale": font_scale,
+        "stacked_fig_height": stacked_fig_height,
+        "panel_fig_height": panel_fig_height,
+    }
     return [
         plot_all_baselines_coverage_by_o(
             summary,
@@ -1127,6 +1241,7 @@ def plot_all_baselines_by_o(
             o_values,
             f"{file_prefix}_alpha{tag}_all_baselines_coverage_by_o.pdf",
             title_prefix,
+            **{k: v for k, v in style.items() if k != "stacked_fig_height"},
         ),
         plot_all_baselines_width_by_o(
             df,
@@ -1136,6 +1251,7 @@ def plot_all_baselines_by_o(
             title_prefix,
             width_col=width_col,
             y_formatter=y_formatter,
+            **{k: v for k, v in style.items() if k != "stacked_fig_height"},
         ),
         plot_all_baselines_stacked_by_o(
             df,
@@ -1143,6 +1259,295 @@ def plot_all_baselines_by_o(
             alpha,
             o_values,
             f"{file_prefix}_alpha{tag}_all_baselines_coverage_width_by_o.pdf",
+            title_prefix,
+            width_col=width_col,
+            y_formatter=y_formatter,
+            **style,
+        ),
+    ]
+
+
+TWIN_PAIR_SPACING = 2.75
+TWIN_HALF_OFFSET = 0.44
+TWIN_BOX_WIDTH = 0.58
+WIDTH_X_OFFSET = 2.60
+HCP_BASELINE_GAP_COVERAGE = 1.35
+HCP_BASELINE_GAP_WIDTH = 2.10
+WIDTH_BOX_LEFT_PAD = 0.80
+
+
+def _dhcp_shcp_hcp_coverage_axis_layout(
+    o_values: list[int],
+) -> tuple[np.ndarray, float, np.ndarray, list[str]]:
+    """Coverage panel: o groups start near the y-axis; HCP marker on the right."""
+    centers = np.arange(len(o_values), dtype=float) * TWIN_PAIR_SPACING
+    hcp_position = float(centers[-1]) + HCP_BASELINE_GAP_COVERAGE
+    tick_positions = np.concatenate([centers, [hcp_position]])
+    tick_labels = [f"o={o}" for o in o_values] + ["HCP"]
+    return centers, hcp_position, tick_positions, tick_labels
+
+
+def _dhcp_shcp_hcp_width_axis_layout(
+    o_values: list[int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, np.ndarray, list[str]]:
+    """Width panel: shift twin boxplots right; extra space before HCP baseline."""
+    centers = np.arange(len(o_values), dtype=float) * TWIN_PAIR_SPACING + WIDTH_X_OFFSET
+    dhcp_positions = centers - TWIN_HALF_OFFSET
+    shcp_positions = centers + TWIN_HALF_OFFSET
+    hcp_position = float(centers[-1]) + HCP_BASELINE_GAP_WIDTH
+    tick_positions = np.concatenate([centers, [hcp_position]])
+    tick_labels = [f"o={o}" for o in o_values] + ["HCP"]
+    return centers, dhcp_positions, shcp_positions, hcp_position, tick_positions, tick_labels
+
+
+def _dhcp_shcp_hcp_legend_handles() -> list[Line2D]:
+    return [
+        Line2D(
+            [0], [0],
+            color=BASELINE_COLORS["GHCP"],
+            marker=BASELINE_MARKERS["GHCP"],
+            linestyle=BASELINE_LINESTYLES["GHCP"],
+            linewidth=LINEWIDTH,
+            markersize=MARKERSIZE,
+            label="GHCP",
+        ),
+        Line2D(
+            [0], [0],
+            color=BASELINE_COLORS["S-HCP"],
+            marker=BASELINE_MARKERS["S-HCP"],
+            linestyle=BASELINE_LINESTYLES["S-HCP"],
+            linewidth=LINEWIDTH,
+            markersize=MARKERSIZE,
+            label="S-HCP",
+        ),
+        Line2D(
+            [0], [0],
+            color=BASELINE_COLORS["HCP"],
+            marker=BASELINE_MARKERS["HCP"],
+            linestyle=BASELINE_LINESTYLES["HCP"],
+            linewidth=LINEWIDTH,
+            markersize=MARKERSIZE,
+            label="HCP",
+        ),
+        Line2D(
+            [0], [0],
+            color=NOMINAL_COLOR,
+            linestyle=(0, (5, 2)),
+            linewidth=2.4,
+            label="Nominal",
+        ),
+    ]
+
+
+def _style_dhcp_shcp_hcp_xaxis(
+    ax: plt.Axes,
+    o_values: list[int],
+    *,
+    panel: str = "width",
+    show_group_labels: bool = True,
+    fonts: dict[str, int] | None = None,
+) -> None:
+    fonts = fonts or {
+        "tick": FONT_TICK,
+        "label": FONT_LABEL,
+        "group": FONT_GROUP_AXIS,
+        "methods_xlabel": FONT_METHODS_XLABEL,
+    }
+    if panel == "coverage":
+        centers, hcp_position, tick_positions, tick_labels = _dhcp_shcp_hcp_coverage_axis_layout(o_values)
+        x_min = float(centers[0]) - 0.20
+        x_max = float(hcp_position) + 0.75
+    else:
+        centers, dhcp_positions, _, hcp_position, tick_positions, tick_labels = _dhcp_shcp_hcp_width_axis_layout(o_values)
+        x_min = float(dhcp_positions[0]) - TWIN_BOX_WIDTH / 2 - WIDTH_BOX_LEFT_PAD
+        x_max = float(hcp_position) + 1.05
+    ax.set_xticks(tick_positions)
+    ax.set_xlim(x_min, x_max)
+    if show_group_labels:
+        ax.set_xticklabels(tick_labels, rotation=TICK_SLANT_DEG, ha="right", fontsize=fonts["tick"])
+        ax.tick_params(axis="x", pad=8, labelsize=fonts["tick"])
+        ax.set_xlabel("")
+    else:
+        ax.set_xticklabels([])
+        ax.tick_params(axis="x", pad=4, labelbottom=False)
+        ax.set_xlabel("")
+
+
+def _draw_dhcp_shcp_hcp_coverage_ax(
+    ax: plt.Axes,
+    summary: pd.DataFrame,
+    alpha: float,
+    o_values: list[int],
+    *,
+    fonts: dict[str, int] | None = None,
+) -> None:
+    fonts = fonts or {"tick": FONT_TICK, "label": FONT_LABEL}
+    s = summary[
+        np.isclose(summary["alpha"], alpha)
+        & summary["o"].isin(o_values + [BASELINE_STATIC_O])
+    ].copy()
+    if s.empty:
+        raise ValueError(f"No summary rows for alpha={alpha}")
+
+    centers, hcp_position, _, _ = _dhcp_shcp_hcp_coverage_axis_layout(o_values)
+
+    for method in ["GHCP", "S-HCP"]:
+        sub = s[s["method"] == method].sort_values("o")
+        if sub.empty:
+            continue
+        o_to_center = {int(o): float(c) for o, c in zip(o_values, centers, strict=True)}
+        x = np.array([o_to_center[int(o)] for o in sub["o"]], dtype=float)
+        y = sub["coverage_mean"].to_numpy(dtype=float)
+        se = sub["coverage_se"].fillna(0.0).to_numpy(dtype=float)
+        ms = _baseline_style(method)
+        _plot_coverage_line_with_band(
+            ax,
+            x,
+            y,
+            se,
+            ms["color"],
+            label=method,
+            marker=ms["marker"],
+            linestyle=ms["linestyle"],
+            alpha_band=0.10,
+        )
+
+    hcp = s[(s["method"] == "HCP") & (s["o"] == BASELINE_STATIC_O)]
+    if not hcp.empty:
+        y = float(hcp["coverage_mean"].iloc[0])
+        se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
+        ms = _baseline_style("HCP")
+        _plot_coverage_mean_with_thick_hbar(
+            ax, hcp_position, y, se, ms["color"], connect=False, marker=ms["marker"], linestyle=ms["linestyle"],
+        )
+
+    ax.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
+    ax.set_ylim(_coverage_ylim_lower(alpha), 1.02)
+    ax.set_ylabel("Empirical coverage", fontsize=fonts["label"])
+    ax.tick_params(axis="both", labelsize=fonts["tick"])
+    ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
+    _apply_plot_border(ax)
+
+
+def _draw_dhcp_shcp_hcp_width_ax(
+    ax: plt.Axes,
+    df: pd.DataFrame,
+    alpha: float,
+    o_values: list[int],
+    *,
+    width_col: str = "width",
+    fonts: dict[str, int] | None = None,
+) -> None:
+    fonts = fonts or {"tick": FONT_TICK, "label": FONT_LABEL}
+    d = df[np.isclose(df["alpha"], alpha) & df["o"].isin(o_values + [BASELINE_STATIC_O])].copy()
+    if d.empty:
+        raise ValueError(f"No rows for alpha={alpha}")
+
+    _, dhcp_positions, shcp_positions, hcp_position, _, _ = _dhcp_shcp_hcp_width_axis_layout(o_values)
+    width_box_groups: list[np.ndarray] = []
+
+    for o_idx, o in enumerate(o_values):
+        for method, pos in [("GHCP", dhcp_positions[o_idx]), ("S-HCP", shcp_positions[o_idx])]:
+            vals = _finite_width_array(d[(d["method"] == method) & (d["o"] == o)][width_col])
+            if len(vals) == 0:
+                continue
+            width_box_groups.append(vals)
+            color = BASELINE_COLORS[method]
+            hatch = "///" if method == "S-HCP" else None
+            ax.boxplot(
+                [vals],
+                positions=[pos],
+                widths=TWIN_BOX_WIDTH,
+                patch_artist=True,
+                showfliers=False,
+                medianprops=_accessible_medianprops(),
+                whiskerprops=_accessible_whiskerprops(color),
+                capprops=_accessible_whiskerprops(color),
+                boxprops=_accessible_boxprops(color, hatch=hatch, alpha=0.72 if method == "GHCP" else 0.62),
+            )
+
+    hcp_vals = _finite_width_array(d[(d["method"] == "HCP") & (d["o"] == BASELINE_STATIC_O)][width_col])
+    if len(hcp_vals):
+        width_box_groups.append(hcp_vals)
+        color = BASELINE_COLORS["HCP"]
+        ax.boxplot(
+            [hcp_vals],
+            positions=[hcp_position],
+            widths=BASELINE_STATIC_BOX_WIDTH,
+            patch_artist=True,
+            showfliers=False,
+            medianprops=_accessible_medianprops(),
+            whiskerprops=_accessible_whiskerprops(color),
+            capprops=_accessible_whiskerprops(color),
+            boxprops=_accessible_boxprops(color, hatch="///", alpha=0.50),
+        )
+
+    width_upper = _width_axis_upper_from_box_groups(width_box_groups)
+    if width_upper is not None:
+        ax.set_ylim(0.0, width_upper)
+    ax.set_ylabel(Y_LABEL_WIDTH, fontsize=fonts["label"])
+    ax.tick_params(axis="both", labelsize=fonts["tick"])
+    ax.grid(True, linestyle="--", linewidth=0.8, alpha=0.30)
+    _apply_plot_border(ax)
+
+
+def plot_dhcp_shcp_hcp_panel_by_o(
+    df: pd.DataFrame,
+    summary: pd.DataFrame,
+    alpha: float,
+    o_values: list[int],
+    out_name: str,
+    title_prefix: str,
+    *,
+    width_col: str = "width",
+    y_formatter=None,
+) -> Path:
+    """Coverage (left) and twin width boxplots (right) for GHCP vs S-HCP with HCP baseline."""
+    sf = _stacked_panel_fonts()
+    fig, (ax_cov, ax_width) = plt.subplots(1, 2, figsize=(28.0, 10.5))
+    _draw_dhcp_shcp_hcp_coverage_ax(ax_cov, summary, alpha, o_values, fonts=sf)
+    _style_dhcp_shcp_hcp_xaxis(ax_cov, o_values, panel="coverage", fonts=sf)
+    ax_cov.set_title(f"{title_prefix}: Coverage", fontsize=sf["title"], pad=18)
+
+    _draw_dhcp_shcp_hcp_width_ax(ax_width, df, alpha, o_values, width_col=width_col, fonts=sf)
+    if y_formatter is not None:
+        ax_width.yaxis.set_major_formatter(y_formatter)
+    _style_dhcp_shcp_hcp_xaxis(ax_width, o_values, panel="width", fonts=sf)
+    ax_width.set_title(f"{title_prefix}: Prediction set width", fontsize=sf["title"], pad=18)
+
+    fig.legend(
+        handles=_dhcp_shcp_hcp_legend_handles(),
+        loc="lower center",
+        ncol=4,
+        **_legend_kwargs(fontsize=sf["methods_xlabel"]),
+    )
+    fig.subplots_adjust(bottom=0.24, wspace=0.22)
+    fig.tight_layout(rect=[0, 0.14, 1, 1])
+    out = FIG_DIR / out_name
+    fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+    return out
+
+
+def plot_dhcp_shcp_hcp_by_o(
+    df: pd.DataFrame,
+    summary: pd.DataFrame,
+    alpha: float,
+    o_values: list[int],
+    file_prefix: str,
+    title_prefix: str,
+    *,
+    width_col: str = "width",
+    y_formatter=None,
+) -> list[Path]:
+    tag = _plot_tag(alpha)
+    return [
+        plot_dhcp_shcp_hcp_panel_by_o(
+            df,
+            summary,
+            alpha,
+            o_values,
+            f"{file_prefix}_alpha{tag}_dhcp_shcp_hcp_coverage_width_by_o.pdf",
             title_prefix,
             width_col=width_col,
             y_formatter=y_formatter,
@@ -1236,7 +1641,7 @@ def plot_randomization_stability(stability: pd.DataFrame) -> Path:
         )
     _style_axis(ax, X_LABEL_TARGET_O, "Relative instability: SD(upper) / mean width")
     ax.set_xticks(O_VALUES)
-    ax.set_title("D-HCP randomization stability", fontsize=FONT_TITLE, pad=12)
+    ax.set_title("GHCP randomization stability", fontsize=FONT_TITLE, pad=12)
     ax.legend(ncol=len(alphas), **_legend_kwargs())
     fig.tight_layout()
     out = FIG_DIR / "poisson_3_randomization_stability_by_alpha.pdf"
@@ -1257,15 +1662,10 @@ def plot_with_vs_no_within_alpha10(
         raise ValueError(f"No rows found for alpha={ALPHA_FOR_WITHIN_COMPARISON}")
 
     fig, axes = plt.subplots(1, 2, figsize=(24.0, 8.8))
-    fig.suptitle(
-        "D-HCP WGT vs no-WGT",
-        fontsize=FONT_TITLE,
-        y=1.02,
-    )
-    methods = ["D-HCP", "D-HCP no within", "HCP"]
+    methods = ["GHCP", "GHCP no within", "HCP"]
     labels = {
-        "D-HCP": "D-HCP WGT",
-        "D-HCP no within": "D-HCP no-WGT",
+        "GHCP": "GHCP WGT",
+        "GHCP no within": "GHCP no-WGT",
         "HCP": "HCP",
     }
 
@@ -1287,20 +1687,12 @@ def plot_with_vs_no_within_alpha10(
             x = sub["o"].to_numpy(dtype=float)
             y = sub["coverage_mean"].to_numpy(dtype=float)
             se = sub["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-        _error_band(ax_cov, x, y, se, ms["color"])
-        ax_cov.errorbar(
-            x,
-            y,
-            yerr=SE_VISUAL_MULTIPLIER * se,
-            color=ms["color"],
+        _plot_coverage_line_with_band(
+            ax_cov, x, y, se, ms["color"],
+            label=labels[method],
             marker=ms["marker"],
             linestyle=ms["linestyle"],
-            linewidth=LINEWIDTH,
-            markersize=MARKERSIZE,
-            capsize=CAPSIZE,
-            markeredgecolor=INK_COLOR,
-            markeredgewidth=0.6,
-            label=labels[method],
+            alpha_band=0.10,
         )
 
     nominal = 1.0 - ALPHA_FOR_WITHIN_COMPARISON
@@ -1314,14 +1706,14 @@ def plot_with_vs_no_within_alpha10(
     ax_cov.set_title("Coverage", fontsize=FONT_TITLE, pad=12)
 
     width_box_groups: list[np.ndarray] = []
-    offsets = {"D-HCP no within": -0.85, "D-HCP": 0.85}
+    offsets = {"GHCP no within": -0.85, "GHCP": 0.85}
     for o in O_VALUES:
-        for method in ["D-HCP no within", "D-HCP"]:
+        for method in ["GHCP no within", "GHCP"]:
             vals = _finite_width_array(d_trials[(d_trials["method"] == method) & (d_trials["o"] == o)]["width"])
             if len(vals):
                 width_box_groups.append(vals)
                 color = METHOD_COLORS[method]
-                hatch = "///" if method == "D-HCP no within" else None
+                hatch = "///" if method == "GHCP no within" else None
                 ax_width.boxplot(
                     [vals],
                     positions=[o + offsets[method]],

@@ -87,9 +87,16 @@ real_data/acs/data/acs_data_all50states.csv
 real_data/acs/data/acs_data.csv
 real_data/acs/data/2018/1-Year/psam_p*.csv
 
-# Generic large data formats
-*.zip
-*.parquet
-*.feather
-*.h5
-*.hdf5
+# ACS archive (local only; too large for git)
+plots_marginal/acs/old/
+
+# Replicate caches
+**/caches/
+*.pkl
+
+# Large trial exports
+**/*trials_long.csv
+**/acs_trials_long.csv
+
+# PNG previews (PDFs are kept)
+plots_marginal/acs/**/*.png

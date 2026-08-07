@@ -1,11 +1,10 @@
-"""
-Hierarchical Conformal Prediction Methods Package
+"""Hierarchical conformal prediction methods.
 
-Exports all method functions for hierarchical conformal prediction:
-  - mu_methods  : mu-estimation objects (RF and OLS)
-  - baseline_hcp: HCP, Pooling, Subsampling, Repeated Subsampling
-    - donor_hcp   : donor-HCP randomized + derandomized
-    - sample_hcp  : sample-HCP randomized + derandomized
+Modules:
+  - mu_methods: RF / OLS global predictors (optional within-group offset)
+  - baseline_hcp: HCP, pooling, subsampling, repeated subsampling
+  - donor_hcp: donor-HCP (GHCP) randomized and derandomized
+  - sample_hcp: sample-HCP randomized and derandomized
 """
 
 from .mu_methods import (

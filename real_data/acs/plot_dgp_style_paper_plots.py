@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import re
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib
@@ -32,16 +34,38 @@ assert _pm_spec.loader is not None
 _pm_spec.loader.exec_module(pm)
 RESULTS_ROOT = REPO_ROOT / "results_marginal" / "acs"
 PAPER_ROOT = REPO_ROOT / "plots_marginal" / "acs"
-FIG_DIR = PAPER_ROOT / "figures"
-SUMMARY_DIR = PAPER_ROOT / "summaries"
 
 PERMUTED_PREFIX = "true_marginal_permuted_alpha"
+PERMUTED_OLS_PREFIX = "true_marginal_permuted_ols_trim2_corr_alpha"
+PERMUTED_OLS_YOEP2000_PREFIX = "true_marginal_permuted_ols_notrim_corr_yoep2000_alpha"
+PERMUTED_OLS_YOEP2000_TRIM2_PREFIX = "true_marginal_permuted_ols_trim2_corr_yoep2000_alpha"
+PERMUTED_OLS_LEGACY_INCOME_PREFIX = "true_marginal_permuted_income_alpha"
+PERMUTED_DING_XGB_PREFIX = "true_marginal_permuted_ding_xgb_income_alpha"
+PERMUTED_DING_XGB_NO_WITHIN_PREFIX = "true_marginal_permuted_ding_xgb_no_within_income_alpha"
+PERMUTED_RF_PREFIX = "true_marginal_permuted_rf_income_notrim_corr_yoep2000_alpha"
+PERMUTED_RF_TRIM2_CORR_PREFIX = "true_marginal_permuted_rf_income_trim2_corr_alpha"
+PERMUTED_RF_TRIM2_MEAN_PREFIX = "true_marginal_permuted_rf_income_trim2_alpha"
+PERMUTED_RF_LEGACY_INCOME_PREFIX = "true_marginal_permuted_rf_income_alpha"
+PERMUTED_RF_2012_MEAN_PREFIX = "true_marginal_permuted_rf_income_notrim_alpha"
+PERMUTED_RF_2012_RESIDUAL_PREFIX = "true_marginal_permuted_rf_income_notrim_corr_alpha"
+PERMUTED_OLS_2012_MEAN_PREFIX = "true_marginal_permuted_ols_notrim_alpha"
+PERMUTED_OLS_2000_MEAN_PREFIX = "true_marginal_permuted_ols_notrim_yoep2000_alpha"
+PERMUTED_OLS_2012_CORRECTION_PREFIX = "true_marginal_permuted_ols_notrim_corr_alpha"
+PERMUTED_RF_NO_WITHIN_PREFIX = "true_marginal_permuted_rf_no_within_income_alpha"
 PERMUTED_T35_PREFIX = "true_marginal_permuted_t35_alpha"
+RESULT_GLOB = f"{PERMUTED_PREFIX}*"
 O_VALUES = [0, 5, 10, 15, 20]
 O_VALUES_UPTO35 = [0, 5, 10, 15, 20, 25, 30, 35]
 NOMINAL_O_VALUES = [0, 10, 20]
 ALPHA_PANEL_VALUES = [0.05, 0.10, 0.20]
 UPTO35_ALPHA_VALUES = [0.10, 0.20]
+TITLE_PREFIX = "ACS"
+ALL_BASELINES_TITLE_PREFIX = "ACS"
+ALL_BASELINES_SHORT_TITLES = False
+ALL_BASELINES_FONT_SCALE = 1.0
+ALL_BASELINES_STACKED_HEIGHT = 20.0
+ALL_BASELINES_PANEL_HEIGHT = 10.5
+FILE_PREFIX = "acs"
 NOMINAL_COVERAGE_MAX = pm.NOMINAL_COVERAGE_MAX
 
 O_COLORS = pm.O_COLORS
@@ -57,7 +81,7 @@ INK_COLOR = pm.INK_COLOR
 ALPHA_BASELINE_COMPARISON = 0.20
 # (method, o, x-axis label) for fixed-o baseline comparison panels.
 BASELINE_COMPARISON_SPECS: list[tuple[str, int, str]] = [
-    ("D-HCP", 20, "D-HCP\n($o=20$)"),
+    ("GHCP", 20, "GHCP\n($o=20$)"),
     ("HCP", 0, "HCP"),
     ("Pooling", 0, "Pooling"),
     ("Subsampling", 0, "Subsampling"),
@@ -83,6 +107,30 @@ BOX_WIDTH_NOMINAL = pm.BOX_WIDTH_NOMINAL
 BOX_WIDTH_O_AXIS = pm.BOX_WIDTH_O_AXIS
 NOMINAL_BOX_GROUP_SPACING = pm.NOMINAL_BOX_GROUP_SPACING
 WIDTH_AXIS_QUANTILE = pm.WIDTH_AXIS_QUANTILE
+
+# Paper o-axis: reference layout is o=0,5,10,15,20 on a step-5 grid, fig width 24.
+O_AXIS_REF_N = 5
+O_AXIS_REF_STEP = 5
+O_AXIS_REF_FIG_WIDTH = 24.0
+O_AXIS_REF_FIG_HEIGHT = 8.8
+O_AXIS_HCP_OFFSET = 6
+O_AXIS_XPAD = 0.75
+
+
+def _standard_o_axis(o_values: list[int]) -> tuple[dict[int, float], float, tuple[float, float], float]:
+    """Same step-5 grid as o=0,5,10,15,20; scale fig width by n_o / 5."""
+    o_values = [int(o) for o in o_values]
+    n = len(o_values)
+    ref_grid = [i * O_AXIS_REF_STEP for i in range(O_AXIS_REF_N)]
+    if o_values == ref_grid:
+        xpos = {o: float(o) for o in o_values}
+    else:
+        xpos = {o: float(i * O_AXIS_REF_STEP) for i, o in enumerate(o_values)}
+    max_x = float((n - 1) * O_AXIS_REF_STEP)
+    hcp_pos = max_x + O_AXIS_HCP_OFFSET
+    cov_xlim = (-O_AXIS_XPAD, max_x + O_AXIS_XPAD)
+    fig_width = O_AXIS_REF_FIG_WIDTH * n / O_AXIS_REF_N
+    return xpos, hcp_pos, cov_xlim, fig_width
 
 X_LABEL_NOMINAL = pm.X_LABEL_NOMINAL
 X_LABEL_TARGET_O = pm.X_LABEL_TARGET_O
@@ -116,6 +164,422 @@ def _currency_formatter(x: float, _pos: int) -> str:
     return f"${x / 1_000:.0f}K"
 
 
+@dataclass(frozen=True)
+class AcsPlotSuite:
+    """Output location and result glob for one ACS predictor run."""
+
+    paper_root: Path
+    result_glob: str
+    alpha_panel_values: tuple[float, ...]
+    results_root: Path | None = None
+    title_prefix: str = "ACS"
+    file_prefix: str = "acs"
+    include_nominal_panels: bool = True
+    include_upto35_panels: bool = True
+    width_col: str = "width_income"
+    width_ylabel: str = Y_LABEL_WIDTH
+    o_values: tuple[int, ...] = (0, 5, 10, 15, 20)
+    all_baselines_title_prefix: str | None = None
+    all_baselines_short_titles: bool = False
+    all_baselines_font_scale: float = 1.0
+    all_baselines_stacked_height: float = 20.0
+    all_baselines_panel_height: float = 10.5
+    extra_width_axis_min: float | None = None
+    trials_csv: Path | None = None
+    skip_all_baselines: bool = False
+    coverage_width_out_suffix: str = ""
+    width_currency_format: bool = True
+
+
+DEFAULT_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT,
+    result_glob=f"{PERMUTED_PREFIX}*",
+    alpha_panel_values=tuple(ALPHA_PANEL_VALUES),
+)
+
+OLS_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols",
+    results_root=PAPER_ROOT / "ols" / "results",
+    result_glob=f"{PERMUTED_OLS_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, income scale, trim top 2%, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+OLS_YOEP2000_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_yoep2000",
+    results_root=PAPER_ROOT / "ols_yoep2000" / "results",
+    result_glob=f"{PERMUTED_OLS_YOEP2000_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, income scale, YOEP≥2000, n≥31, no income trim, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+OLS_YOEP2000_TRIM2_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_yoep2000",
+    results_root=PAPER_ROOT / "ols_yoep2000" / "results_trim2_backup",
+    result_glob=f"{PERMUTED_OLS_YOEP2000_TRIM2_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, income scale, YOEP≥2000, n≥31, trim top 2%, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+OLS_YOEP2000_NOTRIM_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_yoep2000_notrim",
+    results_root=PAPER_ROOT / "ols_yoep2000_notrim" / "results",
+    result_glob=f"{PERMUTED_OLS_YOEP2000_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, income scale, YOEP≥2000, n≥21, no income trim, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 5, 10, 15, 20),
+)
+
+OLS_INCOME_LEGACY_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols" / "legacy_mean",
+    results_root=PAPER_ROOT / "ols" / "legacy_mean" / "results",
+    result_glob=f"{PERMUTED_OLS_LEGACY_INCOME_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, income scale, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+DING_XGB_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "xgboost",
+    result_glob=f"{PERMUTED_DING_XGB_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Ding XGBoost, income scale)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+DING_XGB_NO_WITHIN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "xgboost" / "no_within",
+    result_glob=f"{PERMUTED_DING_XGB_NO_WITHIN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Ding XGBoost, no within-group, income scale)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf",
+    results_root=PAPER_ROOT / "rf" / "results",
+    result_glob=f"{PERMUTED_RF_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, income scale, YOEP≥2000, n≥31, no income trim, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+RF_TRIM2_CORR_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf",
+    results_root=PAPER_ROOT / "rf" / "results_trim2_backup",
+    result_glob=f"{PERMUTED_RF_TRIM2_CORR_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, income scale, trim top 2%, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_TRIM2_MEAN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf" / "trim2_mean",
+    results_root=PAPER_ROOT / "rf" / "trim2_mean" / "results",
+    result_glob=f"{PERMUTED_RF_TRIM2_MEAN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, income scale, trim top 2%, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_LEGACY_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf" / "legacy_mean",
+    results_root=PAPER_ROOT / "rf" / "legacy_mean" / "results",
+    result_glob=f"{PERMUTED_RF_LEGACY_INCOME_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, income scale, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_2012_MEAN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf_2012_mean",
+    results_root=PAPER_ROOT / "rf_2012_mean" / "results",
+    result_glob=f"{PERMUTED_RF_2012_MEAN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, YOEP≥2012, no income filter, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+OLS_2012_MEAN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_2012_mean",
+    results_root=PAPER_ROOT / "ols_2012_mean" / "results",
+    result_glob=f"{PERMUTED_OLS_2012_MEAN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, YOEP≥2012, no income filter, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+OLS_2000_MEAN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_2000_mean",
+    results_root=PAPER_ROOT / "ols_2000_mean" / "results",
+    result_glob=f"{PERMUTED_OLS_2000_MEAN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, YOEP≥2000, no income filter, mean shrinkage)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+OLD_LOG_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "old",
+    result_glob="",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (legacy log1p CP, YOEP≥2012, $10K floor)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    skip_all_baselines=True,
+    width_col="width",
+    width_ylabel="Prediction Set Width (log1p)",
+    width_currency_format=False,
+    coverage_width_out_suffix="_logwidth",
+    trials_csv=PAPER_ROOT / "old" / "summaries" / "acs_trials_long.csv",
+)
+
+OLS_2012_CORRECTION_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "ols_2012_correction",
+    results_root=PAPER_ROOT / "ols_2012_correction" / "results",
+    result_glob=f"{PERMUTED_OLS_2012_CORRECTION_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (OLS, YOEP≥2012, no income filter, residual correction)",
+    all_baselines_title_prefix="ACS",
+    all_baselines_short_titles=True,
+    all_baselines_font_scale=1.08,
+    all_baselines_stacked_height=25.0,
+    all_baselines_panel_height=13.0,
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    extra_width_axis_min=50_000.0,
+)
+
+RF_2012_CORRECTION_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf_2012_correction",
+    results_root=PAPER_ROOT / "rf_2012_correction" / "results",
+    result_glob=f"{PERMUTED_RF_2012_RESIDUAL_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, YOEP≥2012, no income filter, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    extra_width_axis_min=50_000.0,
+)
+
+RF_2012_RESIDUAL_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf_2012_residual",
+    results_root=PAPER_ROOT / "rf_2012_residual" / "results",
+    result_glob=f"{PERMUTED_RF_2012_RESIDUAL_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, YOEP≥2012, no income filter, residual correction)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_NO_WITHIN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "rf" / "no_within",
+    result_glob=f"{PERMUTED_RF_NO_WITHIN_PREFIX}*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (Random Forest, no within-group, income scale)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+)
+
+RF_2000_MEAN_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "non-stratified" / "rf_2000_mean" / "rf_2000_mean",
+    results_root=PAPER_ROOT / "non-stratified" / "rf_2000_mean" / "rf_2000_mean" / "results",
+    result_glob="true_marginal_permuted_rf_income_notrim_t31_yoep2000_alpha*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (RF)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+RF_2000_MEAN_TRIM_TOP_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "non-stratified" / "rf_2000_mean_trim_top" / "rf_2000_mean_trim_top",
+    results_root=PAPER_ROOT / "non-stratified" / "rf_2000_mean_trim_top" / "rf_2000_mean_trim_top" / "results",
+    result_glob="true_marginal_permuted_rf_income_trim2_t31_yoep2000_alpha*",
+    alpha_panel_values=(0.20,),
+    title_prefix="ACS (RF)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+STUDENTIZED_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "studentized",
+    results_root=PAPER_ROOT / "studentized" / "results",
+    result_glob="true_marginal_rf_income_notrim_t31_yoep2000_studentized_alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, studentized |Y−μ|/σ, no row permute)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+RF_NO_PERMUTE_MIN21_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "no_permute_min21",
+    results_root=PAPER_ROOT / "no_permute_min21" / "results",
+    result_glob="true_marginal_rf_income_notrim_yoep2000_alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, no row permute, PUMA size ≥21, target idx 20)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 5, 10, 15, 20),
+)
+
+RF_NO_PERMUTE_MIN31_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "no_permute_min31",
+    results_root=PAPER_ROOT / "no_permute_min31" / "results",
+    result_glob="true_marginal_rf_income_notrim_t30_yoep2000_alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, no row permute, PUMA size ≥31, target idx 30, |S̃|=11)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+RF_YOEP_FB_MIN31_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "yoep_fb_extended" / "min31",
+    results_root=PAPER_ROOT / "yoep_fb_extended" / "min31" / "results",
+    result_glob="true_marginal_rf_income_notrim_t30_yoep2000*alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, YOEP+FB only, size ≥31, target idx 30)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 10, 20, 30),
+)
+
+RF_YOEP_FB_MIN21_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "min21",
+    results_root=PAPER_ROOT / "min21" / "results",
+    result_glob="true_marginal_permuted_rf_income_notrim*yoep2000*alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, age 25–54, hours ≥40, YOEP≥2000, permute, size ≥21)",
+    all_baselines_title_prefix="ACS (RF)",
+    all_baselines_short_titles=True,
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 5, 10, 15, 20),
+)
+
+RF_NEW_SAMPLING_SUITE = AcsPlotSuite(
+    paper_root=PAPER_ROOT / "new_sampling",
+    results_root=PAPER_ROOT / "new_sampling" / "results",
+    result_glob="true_marginal_rf_income_notrim_yoep2010*alpha*",
+    alpha_panel_values=(0.10, 0.20),
+    title_prefix="ACS (RF, YOEP≥2010, mixed-size calib, target idx 20)",
+    include_nominal_panels=False,
+    include_upto35_panels=False,
+    width_col="width_income",
+    width_ylabel="Prediction Set Width ($)",
+    o_values=(0, 5, 10, 15, 20),
+)
+
+
+def configure_suite(suite: AcsPlotSuite) -> None:
+    """Point module-level output paths and glob at one predictor's results."""
+    global PAPER_ROOT, FIG_DIR, SUMMARY_DIR, RESULT_GLOB, RESULTS_ROOT
+    global ALPHA_PANEL_VALUES, TITLE_PREFIX, FILE_PREFIX
+    global WIDTH_COL, WIDTH_YLABEL, O_VALUES
+    global ALL_BASELINES_TITLE_PREFIX, ALL_BASELINES_SHORT_TITLES, ALL_BASELINES_FONT_SCALE
+    global ALL_BASELINES_STACKED_HEIGHT, ALL_BASELINES_PANEL_HEIGHT
+    PAPER_ROOT = suite.paper_root
+    FIG_DIR = PAPER_ROOT / "figures"
+    SUMMARY_DIR = PAPER_ROOT / "summaries"
+    RESULT_GLOB = suite.result_glob
+    RESULTS_ROOT = suite.results_root if suite.results_root is not None else (
+        REPO_ROOT / "results_marginal" / "acs"
+    )
+    ALPHA_PANEL_VALUES = list(suite.alpha_panel_values)
+    TITLE_PREFIX = suite.title_prefix
+    FILE_PREFIX = suite.file_prefix
+    WIDTH_COL = suite.width_col
+    WIDTH_YLABEL = suite.width_ylabel
+    O_VALUES = list(suite.o_values)
+    ALL_BASELINES_TITLE_PREFIX = (
+        suite.all_baselines_title_prefix
+        if suite.all_baselines_title_prefix is not None
+        else suite.title_prefix
+    )
+    ALL_BASELINES_SHORT_TITLES = suite.all_baselines_short_titles
+    ALL_BASELINES_FONT_SCALE = suite.all_baselines_font_scale
+    ALL_BASELINES_STACKED_HEIGHT = suite.all_baselines_stacked_height
+    ALL_BASELINES_PANEL_HEIGHT = suite.all_baselines_panel_height
+
+
+FIG_DIR = PAPER_ROOT / "figures"
+SUMMARY_DIR = PAPER_ROOT / "summaries"
+WIDTH_COL = "width_income"
+WIDTH_YLABEL = Y_LABEL_WIDTH
+
+
 def reset_output_dirs() -> None:
     if PAPER_ROOT.exists():
         shutil.rmtree(PAPER_ROOT)
@@ -128,13 +592,15 @@ def ensure_output_dirs() -> None:
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _detailed_files(*, result_glob: str = "true_marginal_permuted_alpha*") -> list[tuple[float, Path]]:
+def _detailed_files(*, result_glob: str | None = None) -> list[tuple[float, Path]]:
     """Load ACS detailed CSVs; prefer permuted runs when both exist for an alpha.
 
     Row permutation within each PUMA is required for the fixed target index design:
     without it, indices 0..o-1 are not exchangeable with the target at index 20, and
     coverage collapses as o grows.
     """
+    if result_glob is None:
+        result_glob = RESULT_GLOB
     by_alpha: dict[float, Path] = {}
     for result_dir in sorted(RESULTS_ROOT.glob("true_marginal_alpha*")):
         if "permuted" in result_dir.name:
@@ -160,7 +626,26 @@ def _detailed_files(*, result_glob: str = "true_marginal_permuted_alpha*") -> li
     return [(alpha, by_alpha[alpha]) for alpha in sorted(by_alpha)]
 
 
-def load_trials(*, result_glob: str = "true_marginal_permuted_alpha*") -> pd.DataFrame:
+def load_trials_from_csv(path: Path, *, width_col: str | None = None) -> pd.DataFrame:
+    """Load replicate-level trials already saved under a suite summaries folder."""
+    col = width_col or WIDTH_COL
+    df = pd.read_csv(path)
+    if "plot_width" not in df.columns:
+        df["plot_width"] = pd.to_numeric(df[col], errors="coerce")
+    else:
+        df["plot_width"] = pd.to_numeric(df[col], errors="coerce")
+    df["o"] = df["o"].astype(int)
+    if "method" in df.columns:
+        df["method"] = df["method"].replace({"Donor-HCP": "GHCP", "D-HCP": "GHCP", "D-HCP no within": "GHCP no within"})
+    for c in ("coverage", "width", "width_income"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    if "nominal_coverage" not in df.columns and "alpha" in df.columns:
+        df["nominal_coverage"] = 1.0 - df["alpha"]
+    return df.sort_values(["alpha", "method", "o", "replicate"]).reset_index(drop=True)
+
+
+def load_trials(*, result_glob: str | None = None) -> pd.DataFrame:
     pieces = []
     for alpha, path in _detailed_files(result_glob=result_glob):
         df = pd.read_csv(path)
@@ -168,18 +653,19 @@ def load_trials(*, result_glob: str = "true_marginal_permuted_alpha*") -> pd.Dat
         df["alpha"] = alpha
         df["nominal_coverage"] = 1.0 - alpha
         df["o"] = df["o"].astype(int)
-        df["method"] = df["method"].replace({"Donor-HCP": "D-HCP"})
+        df["method"] = df["method"].replace({"Donor-HCP": "GHCP", "D-HCP": "GHCP", "D-HCP no within": "GHCP no within"})
         df["coverage"] = pd.to_numeric(df["coverage"], errors="coerce")
         df["width"] = pd.to_numeric(df["width"], errors="coerce")
         df["width_income"] = pd.to_numeric(df["width_income"], errors="coerce")
+        df["plot_width"] = pd.to_numeric(df[WIDTH_COL], errors="coerce")
         pieces.append(df)
     return pd.concat(pieces, ignore_index=True).sort_values(["alpha", "method", "o", "replicate"])
 
 
 def _summary_for_group(group: pd.DataFrame) -> pd.Series:
     cov = group["coverage"].dropna().to_numpy(dtype=float)
-    width_all = group["width_income"].to_numpy(dtype=float)
-    finite_width = group["width_income"].replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
+    width_all = group["plot_width"].to_numpy(dtype=float)
+    finite_width = group["plot_width"].replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
     p_hat = float(np.mean(cov)) if len(cov) else np.nan
     cov_std = float(np.std(cov, ddof=1)) if len(cov) > 1 else np.nan
     width_std = float(np.std(finite_width, ddof=1)) if len(finite_width) > 1 else np.nan
@@ -190,7 +676,7 @@ def _summary_for_group(group: pd.DataFrame) -> pd.Series:
             "nominal_coverage": float(group["nominal_coverage"].iloc[0]),
             "coverage_mean": p_hat,
             "coverage_std": cov_std,
-            "coverage_se": float(np.sqrt(p_hat * (1.0 - p_hat) / len(cov))) if len(cov) else np.nan,
+            "coverage_se": pm.coverage_standard_error(cov),
             "coverage_n": int(len(cov)),
             "width_mean": float(np.mean(finite_width)) if len(finite_width) else np.nan,
             "width_std": width_std,
@@ -242,6 +728,10 @@ def _set_nominal_ticks(ax: plt.Axes, nominal_values: list[float]) -> None:
     ax.set_xticklabels([_nominal_label(nominal) for nominal in nominal_values], rotation=35, ha="right")
 
 
+def _plot_coverage_line_with_band(ax, x, y, se, color, **kwargs):
+    pm._plot_coverage_line_with_band(ax, x, y, se, color, **kwargs)
+
+
 def _error_band(ax: plt.Axes, x: np.ndarray, y: np.ndarray, se: np.ndarray, color: str, alpha: float = 0.16) -> None:
     pm._error_band(ax, x, y, se, color, alpha=alpha)
 
@@ -269,13 +759,7 @@ def _managed_width_upper(
 
 def _boxplot_whisker_upper(values: list[float] | np.ndarray, whis: float = 1.5) -> float | None:
     """Upper whisker cap for matplotlib's default 1.5*IQR boxplots."""
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    if finite.size == 0:
-        return None
-    q1, q3 = np.quantile(finite, [0.25, 0.75])
-    iqr = q3 - q1
-    return float(min(np.max(finite), q3 + whis * iqr))
+    return pm._boxplot_whisker_upper(values, whis=whis)
 
 
 def _width_axis_upper_from_box_groups(
@@ -284,11 +768,7 @@ def _width_axis_upper_from_box_groups(
     padding: float = WIDTH_AXIS_PADDING,
 ) -> float | None:
     """Y-axis cap from visible boxplot whiskers (showfliers=False), not raw outliers."""
-    uppers = [_boxplot_whisker_upper(group) for group in box_groups if len(group)]
-    uppers = [u for u in uppers if u is not None]
-    if not uppers:
-        return None
-    return max(uppers) * padding
+    return pm._width_axis_upper_from_box_groups(box_groups, padding=padding)
 
 
 def _filter_nominal(df: pd.DataFrame) -> pd.DataFrame:
@@ -307,52 +787,36 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     fig, axes = plt.subplots(2, 1, figsize=(26.0, 18.5))
     ax_cov, ax_width = axes
 
-    dhcp_summary = summary[summary["method"] == "D-HCP"]
+    dhcp_summary = summary[summary["method"] == "GHCP"]
     for o in NOMINAL_O_VALUES:
         sub = dhcp_summary[dhcp_summary["o"] == o].sort_values("nominal_coverage")
         x = sub["nominal_coverage"].to_numpy(dtype=float)
         y = sub["coverage_mean"].to_numpy(dtype=float)
         se = sub["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-        _error_band(ax_cov, x, y, se, O_COLORS[o], alpha=0.12)
-        ax_cov.errorbar(
-            x,
-            y,
-            yerr=SE_VISUAL_MULTIPLIER * se,
-            linestyle="-",
+        _plot_coverage_line_with_band(
+            ax_cov, x, y, se, O_COLORS[o],
+            label=f"GHCP, o={o}",
             marker=O_MARKERS.get(o, "o"),
-            linewidth=LINEWIDTH,
-            markersize=MARKERSIZE,
-            capsize=CAPSIZE,
-            color=O_COLORS[o],
-            markeredgecolor=INK_COLOR,
-            markeredgewidth=0.6,
-            label=f"D-HCP, o={o}",
+            linestyle="-",
+            alpha_band=0.12,
         )
 
     hcp = _dedupe_hcp(summary).sort_values("nominal_coverage")
     x_hcp = hcp["nominal_coverage"].to_numpy(dtype=float)
     y_hcp = hcp["coverage_mean"].to_numpy(dtype=float)
     se_hcp = hcp["coverage_se"].fillna(0.0).to_numpy(dtype=float)
-    _error_band(ax_cov, x_hcp, y_hcp, se_hcp, METHOD_COLORS["HCP"], alpha=0.10)
-    ax_cov.errorbar(
-        x_hcp,
-        y_hcp,
-        yerr=SE_VISUAL_MULTIPLIER * se_hcp,
-        linestyle=METHOD_LINESTYLES["HCP"],
-        marker=METHOD_MARKERS["HCP"],
-        linewidth=LINEWIDTH,
-        markersize=MARKERSIZE,
-        capsize=CAPSIZE,
-        color=METHOD_COLORS["HCP"],
-        markeredgecolor=INK_COLOR,
-        markeredgewidth=0.6,
+    _plot_coverage_line_with_band(
+        ax_cov, x_hcp, y_hcp, se_hcp, METHOD_COLORS["HCP"],
         label="HCP",
+        marker=METHOD_MARKERS["HCP"],
+        linestyle=METHOD_LINESTYLES["HCP"],
+        alpha_band=0.10,
     )
     ax_cov.plot(nominal_values, nominal_values, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
     _style_axis(ax_cov, X_LABEL_NOMINAL, "Empirical coverage")
     _set_nominal_ticks(ax_cov, nominal_values)
     ax_cov.set_ylim(_coverage_ylim_lower_from_nominals(nominal_values), 1.02)
-    ax_cov.set_title("ACS Coverage", fontsize=FONT_TITLE, pad=12)
+    ax_cov.set_title(f"{TITLE_PREFIX} Coverage", fontsize=FONT_TITLE, pad=12)
 
     positions = np.arange(len(nominal_values), dtype=float) * NOMINAL_BOX_GROUP_SPACING
     n_box_series = len(NOMINAL_O_VALUES) + 1
@@ -362,10 +826,10 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
         for o_idx, o in enumerate(NOMINAL_O_VALUES):
             vals = _finite_width_array(
                 trials[
-                    (trials["method"] == "D-HCP")
+                    (trials["method"] == "GHCP")
                     & (trials["o"] == o)
                     & np.isclose(trials["nominal_coverage"], nominal)
-                ]["width_income"]
+                ]["plot_width"]
             )
             if len(vals):
                 width_box_groups.append(vals)
@@ -385,7 +849,7 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
 
         vals_hcp = _finite_width_array(
             trials[(trials["method"] == "HCP") & (trials["o"] == 0) & np.isclose(trials["nominal_coverage"], nominal)][
-                "width_income"
+                "plot_width"
             ]
         )
         if len(vals_hcp):
@@ -409,12 +873,12 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     if width_upper is not None:
         ax_width.set_ylim(0.0, width_upper)
     ax_width.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
-    _style_axis(ax_width, X_LABEL_NOMINAL, Y_LABEL_WIDTH)
-    ax_width.set_title("ACS Prediction Set Width", fontsize=FONT_TITLE, pad=12)
+    _style_axis(ax_width, X_LABEL_NOMINAL, WIDTH_YLABEL)
+    ax_width.set_title(f"{TITLE_PREFIX} Prediction Set Width", fontsize=FONT_TITLE, pad=12)
 
     handles = [
         Line2D([0], [0], color=O_COLORS[o], marker=O_MARKERS.get(o, "o"), linestyle="-",
-               linewidth=LINEWIDTH, label=f"D-HCP, o={o}")
+               linewidth=LINEWIDTH, label=f"GHCP, o={o}")
         for o in NOMINAL_O_VALUES
     ]
     handles.append(Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
@@ -422,7 +886,7 @@ def plot_nominal_coverage_width(trials: pd.DataFrame, summary: pd.DataFrame) -> 
     handles.append(Line2D([0], [0], color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal"))
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.10, 1, 1], h_pad=3.2)
-    out = FIG_DIR / "acs_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf"
+    out = FIG_DIR / f"{FILE_PREFIX}_1_dhcp_coverage_lines_width_boxplots_by_nominal_o0_10_20.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
     plt.close(fig)
     return out
@@ -434,11 +898,11 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
     fig, axes = plt.subplots(2, 1, figsize=(26.0, 18.0))
 
     for ax, metric, se_col, ylabel, title in [
-        (axes[0], "coverage_mean", "coverage_se", "Empirical coverage", "ACS Coverage with SE Bands"),
-        (axes[1], "width_mean", "width_se", Y_LABEL_WIDTH, "ACS Prediction Set Width with SE Bands"),
+        (axes[0], "coverage_mean", "coverage_se", "Empirical coverage", f"{TITLE_PREFIX} Coverage with SE Bands"),
+        (axes[1], "width_mean", "width_se", WIDTH_YLABEL, f"{TITLE_PREFIX} Prediction Set Width with SE Bands"),
     ]:
         for o in NOMINAL_O_VALUES:
-            sub = summary[(summary["method"] == "D-HCP") & (summary["o"] == o)].sort_values("nominal_coverage")
+            sub = summary[(summary["method"] == "GHCP") & (summary["o"] == o)].sort_values("nominal_coverage")
             x = sub["nominal_coverage"].to_numpy(dtype=float)
             y = sub[metric].to_numpy(dtype=float)
             se = sub[se_col].fillna(0.0).to_numpy(dtype=float)
@@ -452,7 +916,7 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
                 color=O_COLORS[o],
                 markeredgecolor=INK_COLOR,
                 markeredgewidth=0.6,
-                label=f"D-HCP, o={o}",
+                label=f"GHCP, o={o}",
             )
 
         hcp = _dedupe_hcp(summary).sort_values("nominal_coverage")
@@ -487,7 +951,7 @@ def plot_nominal_line_bands(summary: pd.DataFrame) -> Path:
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.10, 1, 1], h_pad=3.2)
-    out = FIG_DIR / "acs_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf"
+    out = FIG_DIR / f"{FILE_PREFIX}_2_dhcp_coverage_width_line_bands_by_nominal_o0_10_20.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
     plt.close(fig)
     return out
@@ -497,72 +961,106 @@ def plot_alpha_o_axis_panel(
     trials: pd.DataFrame,
     summary: pd.DataFrame,
     alpha: float,
-    o_values: list[int] = O_VALUES,
+    o_values: list[int] | None = None,
     out_suffix: str = "",
+    width_ymin: float | None = None,
+    width_currency_format: bool = True,
+    include_stdcp: bool = False,
 ) -> Path:
+    if o_values is None:
+        o_values = O_VALUES
+    xpos, hcp_pos, cov_xlim, fig_width = _standard_o_axis(o_values)
     d_trials = trials[np.isclose(trials["alpha"], alpha)].copy()
     d_summary = summary[np.isclose(summary["alpha"], alpha)].copy()
-    fig, axes = plt.subplots(1, 2, figsize=(24.0, 8.8))
+    fig, axes = plt.subplots(1, 2, figsize=(fig_width, O_AXIS_REF_FIG_HEIGHT))
     ax_cov, ax_width = axes
 
-    dhcp = d_summary[(d_summary["method"] == "D-HCP") & (d_summary["o"].isin(o_values))].sort_values("o")
+    dhcp = d_summary[(d_summary["method"] == "GHCP") & (d_summary["o"].isin(o_values))].sort_values("o")
+    stdcp = d_summary[(d_summary["method"] == "Std-CP") & (d_summary["o"].isin(o_values))].sort_values("o")
     hcp = d_summary[(d_summary["method"] == "HCP") & (d_summary["o"] == 0)]
     if dhcp.empty or hcp.empty:
-        raise ValueError(f"Missing D-HCP or HCP rows for alpha={alpha}, o_values={o_values}")
-    _error_band(ax_cov, dhcp["o"].to_numpy(dtype=float), dhcp["coverage_mean"].to_numpy(dtype=float), dhcp["coverage_se"].fillna(0.0).to_numpy(dtype=float), METHOD_COLORS["D-HCP"], alpha=0.10)
-    ax_cov.errorbar(
-        dhcp["o"],
-        dhcp["coverage_mean"],
-        yerr=SE_VISUAL_MULTIPLIER * dhcp["coverage_se"].fillna(0.0),
-        color=METHOD_COLORS["D-HCP"],
-        marker=METHOD_MARKERS["D-HCP"],
-        linestyle=METHOD_LINESTYLES["D-HCP"],
-        linewidth=LINEWIDTH,
-        markersize=MARKERSIZE,
-        capsize=CAPSIZE,
-        markeredgecolor=INK_COLOR,
-        markeredgewidth=0.6,
-        label="D-HCP",
+        raise ValueError(f"Missing GHCP or HCP rows for alpha={alpha}, o_values={o_values}")
+    _plot_coverage_line_with_band(
+        ax_cov,
+        np.asarray([xpos[int(o)] for o in dhcp["o"]], dtype=float),
+        dhcp["coverage_mean"].to_numpy(dtype=float),
+        dhcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
+        METHOD_COLORS["GHCP"],
+        label="GHCP",
+        marker=METHOD_MARKERS["GHCP"],
+        linestyle=METHOD_LINESTYLES["GHCP"],
+        alpha_band=0.10,
     )
+    if include_stdcp and not stdcp.empty:
+        _plot_coverage_line_with_band(
+            ax_cov,
+            np.asarray([xpos[int(o)] for o in stdcp["o"]], dtype=float),
+            stdcp["coverage_mean"].to_numpy(dtype=float),
+            stdcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
+            METHOD_COLORS["Std-CP"],
+            label="Std-CP",
+            marker=METHOD_MARKERS["Std-CP"],
+            linestyle=METHOD_LINESTYLES["Std-CP"],
+            alpha_band=0.10,
+        )
     if not hcp.empty:
         hcp_cov = float(hcp["coverage_mean"].iloc[0])
         hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
-        x_hcp = np.asarray(o_values, dtype=float)
+        x_hcp = np.asarray([xpos[int(o)] for o in o_values], dtype=float)
         y_hcp = np.repeat(hcp_cov, len(o_values))
-        band = np.repeat(SE_VISUAL_MULTIPLIER * hcp_cov_se, len(o_values))
-        ax_cov.plot(
-            x_hcp, y_hcp,
-            color=METHOD_COLORS["HCP"],
-            linestyle=METHOD_LINESTYLES["HCP"],
-            linewidth=LINEWIDTH,
+        se_hcp = np.repeat(hcp_cov_se, len(o_values))
+        _plot_coverage_line_with_band(
+            ax_cov, x_hcp, y_hcp, se_hcp, METHOD_COLORS["HCP"],
             label="HCP",
+            marker=METHOD_MARKERS["HCP"],
+            linestyle=METHOD_LINESTYLES["HCP"],
+            alpha_band=0.10,
         )
-        ax_cov.fill_between(x_hcp, y_hcp - band, y_hcp + band, color=METHOD_COLORS["HCP"], alpha=0.10, linewidth=0)
     ax_cov.axhline(1.0 - alpha, color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal")
-    ax_cov.set_xlim(min(o_values) - 0.75, max(o_values) + 0.75)
+    ax_cov.set_xlim(*cov_xlim)
     ax_cov.set_ylim(_coverage_ylim_lower(alpha), 1.02)
-    ax_cov.set_xticks(o_values)
+    ax_cov.set_xticks([xpos[int(o)] for o in o_values])
+    ax_cov.set_xticklabels([str(o) for o in o_values])
     _style_axis(ax_cov, X_LABEL_TARGET_O, "Empirical coverage")
     ax_cov.set_title("Coverage", fontsize=FONT_TITLE, pad=12)
 
     width_box_groups: list[np.ndarray] = []
+    dhcp_dx = -0.28 if include_stdcp else 0.0
+    stdcp_dx = 0.28
+    box_w = BOX_WIDTH_O_AXIS * (0.62 if include_stdcp else 1.0)
     for o in o_values:
-        vals = _finite_width_array(d_trials[(d_trials["method"] == "D-HCP") & (d_trials["o"] == o)]["width_income"])
+        vals = _finite_width_array(d_trials[(d_trials["method"] == "GHCP") & (d_trials["o"] == o)]["plot_width"])
         if len(vals):
             width_box_groups.append(vals)
             ax_width.boxplot(
                 [vals],
-                positions=[o],
-                widths=BOX_WIDTH_O_AXIS,
+                positions=[xpos[int(o)] + dhcp_dx],
+                widths=box_w,
                 patch_artist=True,
                 showfliers=False,
                 medianprops=pm._accessible_medianprops(),
-                whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
-                capprops=pm._accessible_whiskerprops(METHOD_COLORS["D-HCP"]),
-                boxprops=pm._accessible_boxprops(METHOD_COLORS["D-HCP"], alpha=0.68),
+                whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["GHCP"]),
+                capprops=pm._accessible_whiskerprops(METHOD_COLORS["GHCP"]),
+                boxprops=pm._accessible_boxprops(METHOD_COLORS["GHCP"], alpha=0.68),
             )
-    hcp_pos = max(o_values) + 6
-    vals_hcp = _finite_width_array(d_trials[(d_trials["method"] == "HCP") & (d_trials["o"] == 0)]["width_income"])
+        if include_stdcp:
+            vals_std = _finite_width_array(
+                d_trials[(d_trials["method"] == "Std-CP") & (d_trials["o"] == o)]["plot_width"]
+            )
+            if len(vals_std):
+                width_box_groups.append(vals_std)
+                ax_width.boxplot(
+                    [vals_std],
+                    positions=[xpos[int(o)] + stdcp_dx],
+                    widths=box_w,
+                    patch_artist=True,
+                    showfliers=False,
+                    medianprops=pm._accessible_medianprops(),
+                    whiskerprops=pm._accessible_whiskerprops(METHOD_COLORS["Std-CP"]),
+                    capprops=pm._accessible_whiskerprops(METHOD_COLORS["Std-CP"]),
+                    boxprops=pm._accessible_boxprops(METHOD_COLORS["Std-CP"], alpha=0.55),
+                )
+    vals_hcp = _finite_width_array(d_trials[(d_trials["method"] == "HCP") & (d_trials["o"] == 0)]["plot_width"])
     if len(vals_hcp):
         width_box_groups.append(vals_hcp)
         ax_width.boxplot(
@@ -576,28 +1074,38 @@ def plot_alpha_o_axis_panel(
             capprops=pm._accessible_whiskerprops(METHOD_COLORS["HCP"]),
             boxprops=pm._accessible_boxprops(METHOD_COLORS["HCP"], hatch="///", alpha=0.50),
         )
-    ax_width.set_xticks([*o_values, hcp_pos])
+    ax_width.set_xticks([*(xpos[int(o)] for o in o_values), hcp_pos])
     ax_width.set_xticklabels([*(str(o) for o in o_values), "HCP"])
     width_upper = _width_axis_upper_from_box_groups(width_box_groups)
     if width_upper is not None:
-        ax_width.set_ylim(0.0, width_upper)
-    ax_width.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
-    _style_axis(ax_width, X_LABEL_TARGET_O, Y_LABEL_WIDTH)
-    ax_width.set_title(Y_LABEL_WIDTH, fontsize=FONT_TITLE, pad=12)
+        ymin = 0.0 if width_ymin is None else float(width_ymin)
+        ax_width.set_ylim(ymin, width_upper)
+    if width_currency_format:
+        ax_width.yaxis.set_major_formatter(FuncFormatter(_currency_formatter))
+    _style_axis(ax_width, X_LABEL_TARGET_O, WIDTH_YLABEL)
+    ax_width.set_title(WIDTH_YLABEL, fontsize=FONT_TITLE, pad=12)
 
     handles = [
-        Line2D([0], [0], color=METHOD_COLORS["D-HCP"], marker=METHOD_MARKERS["D-HCP"],
-               linestyle=METHOD_LINESTYLES["D-HCP"], linewidth=LINEWIDTH, label="D-HCP"),
+        Line2D([0], [0], color=METHOD_COLORS["GHCP"], marker=METHOD_MARKERS["GHCP"],
+               linestyle=METHOD_LINESTYLES["GHCP"], linewidth=LINEWIDTH, label="GHCP"),
+    ]
+    if include_stdcp:
+        handles.append(
+            Line2D([0], [0], color=METHOD_COLORS["Std-CP"], marker=METHOD_MARKERS["Std-CP"],
+                   linestyle=METHOD_LINESTYLES["Std-CP"], linewidth=LINEWIDTH, label="Std-CP")
+        )
+    handles.extend([
         Line2D([0], [0], color=METHOD_COLORS["HCP"], marker=METHOD_MARKERS["HCP"],
                linestyle=METHOD_LINESTYLES["HCP"], linewidth=LINEWIDTH, label="HCP"),
         Line2D([0], [0], color=NOMINAL_COLOR, linestyle=(0, (5, 2)), linewidth=2.4, label="Nominal"),
-    ]
+    ])
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), **pm._legend_kwargs())
     fig.tight_layout(rect=[0, 0.15, 1, 1], w_pad=3.0)
-    out = FIG_DIR / f"acs_alpha{_plot_tag(alpha)}_coverage_width_by_o{out_suffix}.pdf"
+    out = FIG_DIR / f"{FILE_PREFIX}_alpha{_plot_tag(alpha)}_coverage_width_by_o{out_suffix}.pdf"
     fig.savefig(out, transparent=True, bbox_inches="tight", dpi=300)
     plt.close(fig)
     return out
+
 
 
 def plot_all_baselines_by_o(
@@ -615,10 +1123,14 @@ def plot_all_baselines_by_o(
             summary,
             alpha,
             o_values,
-            file_prefix="acs",
-            title_prefix="ACS",
-            width_col="width_income",
+            file_prefix=FILE_PREFIX,
+            title_prefix=ALL_BASELINES_TITLE_PREFIX,
+            width_col="plot_width",
             y_formatter=FuncFormatter(_currency_formatter),
+            short_titles=ALL_BASELINES_SHORT_TITLES,
+            font_scale=ALL_BASELINES_FONT_SCALE,
+            stacked_fig_height=ALL_BASELINES_STACKED_HEIGHT,
+            panel_fig_height=ALL_BASELINES_PANEL_HEIGHT,
         )
     finally:
         pm.FIG_DIR = saved_fig_dir
@@ -626,10 +1138,10 @@ def plot_all_baselines_by_o(
 
 def write_summaries(trials: pd.DataFrame, summary: pd.DataFrame) -> list[Path]:
     paths = [
-        SUMMARY_DIR / "acs_trials_long.csv",
-        SUMMARY_DIR / "acs_summary_by_alpha_o_method.csv",
-        SUMMARY_DIR / "acs_coverage_table.csv",
-        SUMMARY_DIR / "acs_width_table.csv",
+        SUMMARY_DIR / f"{FILE_PREFIX}_trials_long.csv",
+        SUMMARY_DIR / f"{FILE_PREFIX}_summary_by_alpha_o_method.csv",
+        SUMMARY_DIR / f"{FILE_PREFIX}_coverage_table.csv",
+        SUMMARY_DIR / f"{FILE_PREFIX}_width_table.csv",
     ]
     trials.to_csv(paths[0], index=False)
     summary.to_csv(paths[1], index=False)
@@ -658,36 +1170,82 @@ def write_summaries(trials: pd.DataFrame, summary: pd.DataFrame) -> list[Path]:
     return paths
 
 
-def main() -> None:
+def run_suite(suite: AcsPlotSuite = DEFAULT_SUITE) -> list[Path]:
+    configure_suite(suite)
     ensure_output_dirs()
-    print("Loading ACS true marginal detailed results...")
-    trials = load_trials()
+    if suite.trials_csv is not None:
+        print(f"Loading saved trials from {suite.trials_csv}...")
+        trials = load_trials_from_csv(suite.trials_csv, width_col=suite.width_col)
+    else:
+        print(f"Loading ACS results from {RESULTS_ROOT} ({RESULT_GLOB})...")
+        trials = load_trials()
     summary = summarize_trials(trials)
-    summary_paths = write_summaries(trials, summary)
-    outputs = [
-        plot_nominal_coverage_width(trials, summary),
-        plot_nominal_line_bands(summary),
-    ]
+    summary_paths = write_summaries(trials, summary) if suite.trials_csv is None else []
+    outputs: list[Path] = []
+    if suite.include_nominal_panels and len(ALPHA_PANEL_VALUES) >= 2:
+        outputs.extend([
+            plot_nominal_coverage_width(trials, summary),
+            plot_nominal_line_bands(summary),
+        ])
+    has_stdcp = "Std-CP" in set(trials["method"].astype(str))
     for alpha in ALPHA_PANEL_VALUES:
-        outputs.append(plot_alpha_o_axis_panel(trials, summary, alpha))
-        outputs.extend(plot_all_baselines_by_o(trials, summary, alpha))
-
-    try:
-        trials_upto35 = load_trials(result_glob=f"{PERMUTED_T35_PREFIX}*")
-        summary_upto35 = summarize_trials(trials_upto35)
-        for alpha in UPTO35_ALPHA_VALUES:
+        out_suffix = suite.coverage_width_out_suffix
+        outputs.append(
+            plot_alpha_o_axis_panel(
+                trials,
+                summary,
+                alpha,
+                o_values=O_VALUES,
+                out_suffix=out_suffix,
+                width_ymin=suite.extra_width_axis_min,
+                width_currency_format=suite.width_currency_format,
+            )
+        )
+        if has_stdcp:
             outputs.append(
                 plot_alpha_o_axis_panel(
-                    trials_upto35,
-                    summary_upto35,
+                    trials,
+                    summary,
                     alpha,
-                    o_values=O_VALUES_UPTO35,
-                    out_suffix="_upto35",
+                    o_values=O_VALUES,
+                    out_suffix=f"{out_suffix}_with_stdcp",
+                    width_ymin=suite.extra_width_axis_min,
+                    width_currency_format=suite.width_currency_format,
+                    include_stdcp=True,
                 )
             )
-        print("Loaded target-index-35 ACS results for o up to 35 plots.")
-    except FileNotFoundError as exc:
-        print(f"Skipping o-up-to-35 ACS panels ({exc}).")
+        if suite.extra_width_axis_min is not None:
+            outputs.append(
+                plot_alpha_o_axis_panel(
+                    trials,
+                    summary,
+                    alpha,
+                    o_values=O_VALUES,
+                    out_suffix=f"{out_suffix}_width_from50k",
+                    width_ymin=suite.extra_width_axis_min,
+                    width_currency_format=suite.width_currency_format,
+                )
+            )
+        if not suite.skip_all_baselines:
+            outputs.extend(plot_all_baselines_by_o(trials, summary, alpha, o_values=O_VALUES))
+
+    if suite.include_upto35_panels:
+        try:
+            trials_upto35 = load_trials(result_glob=f"{PERMUTED_T35_PREFIX}*")
+            summary_upto35 = summarize_trials(trials_upto35)
+            for alpha in UPTO35_ALPHA_VALUES:
+                outputs.append(
+                    plot_alpha_o_axis_panel(
+                        trials_upto35,
+                        summary_upto35,
+                        alpha,
+                        o_values=O_VALUES_UPTO35,
+                        out_suffix="_upto35",
+                    )
+                )
+            print("Loaded target-index-35 ACS results for o up to 35 plots.")
+        except FileNotFoundError as exc:
+            print(f"Skipping o-up-to-35 ACS panels ({exc}).")
 
     print("Saved summaries:")
     for path in summary_paths:
@@ -695,6 +1253,71 @@ def main() -> None:
     print("Saved plots:")
     for path in outputs:
         print(f"  {path}")
+    return outputs
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate ACS true-marginal paper plots.")
+    parser.add_argument(
+        "--predictor",
+        choices=("ols", "ols_income", "ols_yoep2000", "ols_yoep2000_notrim", "ols_legacy", "ols_2012_mean", "ols_2000_mean", "ols_2012_correction", "old_log", "ding_xgb", "ding_xgb_no_within", "rf", "rf_2012_mean", "rf_2012_correction", "rf_2012_residual", "rf_trim2_mean", "rf_legacy", "rf_no_within", "rf_2000_mean", "rf_2000_mean_trim_top", "studentized", "rf_no_permute_min21", "rf_no_permute_min31", "rf_yoep_fb_min31", "rf_yoep_fb_min21", "rf_new_sampling"),
+        default="ols",
+        help="Result set including rf_new_sampling.",
+    )
+    args = parser.parse_args()
+    if args.predictor == "ols_income":
+        suite = OLS_SUITE
+    elif args.predictor == "ols_yoep2000":
+        suite = OLS_YOEP2000_SUITE
+    elif args.predictor == "ols_yoep2000_notrim":
+        suite = OLS_YOEP2000_NOTRIM_SUITE
+    elif args.predictor == "ols_legacy":
+        suite = OLS_INCOME_LEGACY_SUITE
+    elif args.predictor == "ols_2012_mean":
+        suite = OLS_2012_MEAN_SUITE
+    elif args.predictor == "ols_2000_mean":
+        suite = OLS_2000_MEAN_SUITE
+    elif args.predictor == "ols_2012_correction":
+        suite = OLS_2012_CORRECTION_SUITE
+    elif args.predictor == "old_log":
+        suite = OLD_LOG_SUITE
+    elif args.predictor == "ding_xgb":
+        suite = DING_XGB_SUITE
+    elif args.predictor == "ding_xgb_no_within":
+        suite = DING_XGB_NO_WITHIN_SUITE
+    elif args.predictor == "rf":
+        suite = RF_SUITE
+    elif args.predictor == "rf_2012_mean":
+        suite = RF_2012_MEAN_SUITE
+    elif args.predictor == "rf_2012_correction":
+        suite = RF_2012_CORRECTION_SUITE
+    elif args.predictor == "rf_2012_residual":
+        suite = RF_2012_RESIDUAL_SUITE
+    elif args.predictor == "rf_trim2_mean":
+        suite = RF_TRIM2_MEAN_SUITE
+    elif args.predictor == "rf_legacy":
+        suite = RF_LEGACY_SUITE
+    elif args.predictor == "rf_no_within":
+        suite = RF_NO_WITHIN_SUITE
+    elif args.predictor == "rf_2000_mean":
+        suite = RF_2000_MEAN_SUITE
+    elif args.predictor == "rf_2000_mean_trim_top":
+        suite = RF_2000_MEAN_TRIM_TOP_SUITE
+    elif args.predictor == "studentized":
+        suite = STUDENTIZED_SUITE
+    elif args.predictor == "rf_no_permute_min21":
+        suite = RF_NO_PERMUTE_MIN21_SUITE
+    elif args.predictor == "rf_no_permute_min31":
+        suite = RF_NO_PERMUTE_MIN31_SUITE
+    elif args.predictor == "rf_yoep_fb_min31":
+        suite = RF_YOEP_FB_MIN31_SUITE
+    elif args.predictor == "rf_yoep_fb_min21":
+        suite = RF_YOEP_FB_MIN21_SUITE
+    elif args.predictor == "rf_new_sampling":
+        suite = RF_NEW_SAMPLING_SUITE
+    else:
+        suite = DEFAULT_SUITE
+    run_suite(suite)
 
 
 if __name__ == "__main__":

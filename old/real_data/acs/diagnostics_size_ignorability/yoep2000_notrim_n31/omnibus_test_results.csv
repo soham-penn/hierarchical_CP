@@ -1,0 +1,3 @@
+test,median_omnibus_stat,median_perm_p_value,frac_perm_p_lt_0p05,mean_omnibus_stat
+residual_summaries,0.3120545306632265,0.002,1.0,0.3153007608319709
+x_summaries,0.16352745080159342,0.024,0.71,0.16475947305576516

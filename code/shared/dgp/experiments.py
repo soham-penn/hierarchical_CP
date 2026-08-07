@@ -58,13 +58,117 @@ def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
             return_info=False,
         )
     k = int(np.ceil((n + 1) * (1 - alpha)))
-    k = min(max(1, k), n)
+    if k > n:
+        return np.inf
+    k = max(1, k)
     return float(np.partition(scores, k - 1)[k - 1])
 
 
-def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, quantile_mode="deterministic",
-                             random_seed=None, rng=None):
-    """Standard split CP interval using only within-group history."""
+def _compute_std_cp_interval_global_center(
+    x_hist,
+    y_hist,
+    x_target,
+    alpha,
+    *,
+    mu_hat_hist,
+    mu_hat_target,
+    u_hist=None,
+    u_target=None,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    score_aux=None,
+):
+    """
+    Inductive Std-CP with a frozen global predictor as the center.
+
+    Uses all o history residuals (no local refit / half-split). With studentized
+    score_aux, residuals are |Y-μ|/σ and the interval is μ ± q·σ(x_target).
+    """
+    from methods.nonconformity import predict_scale
+
+    y_hist = np.asarray(y_hist, dtype=float).ravel()
+    mu_hat_hist = np.asarray(mu_hat_hist, dtype=float).ravel()
+    if len(y_hist) < 1 or len(mu_hat_hist) != len(y_hist):
+        return (-np.inf, np.inf)
+
+    st = (score_aux or {}).get("score_type", "absolute")
+    x_hist = np.asarray(x_hist, dtype=float)
+    if x_hist.ndim == 1:
+        x_hist = x_hist.reshape(-1, 1)
+    x_target = np.asarray(x_target, dtype=float).ravel()
+
+    if u_hist is None:
+        u_hist = np.zeros((len(y_hist), 0), dtype=float)
+    else:
+        u_hist = np.asarray(u_hist, dtype=float)
+        if u_hist.ndim == 1:
+            u_hist = np.repeat(u_hist.reshape(1, -1), len(y_hist), axis=0)
+    if u_target is None:
+        u_target = np.zeros(0, dtype=float)
+    else:
+        u_target = np.asarray(u_target, dtype=float).ravel()
+
+    if st == "studentized" and score_aux is not None:
+        sig_hist = np.array(
+            [predict_scale(score_aux, x_hist[i], u_hist[i], w_g=1.0) for i in range(len(y_hist))],
+            dtype=float,
+        )
+        scores = np.abs(y_hist - mu_hat_hist) / np.clip(sig_hist, 1e-6, 1e12)
+    else:
+        scores = np.abs(y_hist - mu_hat_hist)
+
+    radius = _split_conformal_radius(
+        scores,
+        alpha,
+        quantile_mode=quantile_mode,
+        random_seed=random_seed,
+        rng=rng,
+    )
+    if not np.isfinite(radius):
+        return (-np.inf, np.inf)
+    if st == "studentized" and score_aux is not None:
+        s_t = float(predict_scale(score_aux, x_target, u_target, w_g=1.0))
+        return (float(mu_hat_target) - radius * s_t, float(mu_hat_target) + radius * s_t)
+    return (float(mu_hat_target) - radius, float(mu_hat_target) + radius)
+
+
+def _compute_std_cp_interval(
+    x_hist,
+    y_hist,
+    x_target,
+    alpha,
+    quantile_mode="deterministic",
+    random_seed=None,
+    rng=None,
+    *,
+    ntree=50,
+    nodesize=5,
+    mtry=None,
+    rf_random_state=123,
+    score_type="absolute",
+    return_models=False,
+):
+    """
+    Standard split CP using only within-group history (local models on X).
+
+    score_type:
+      absolute     — local RF mean + |Y-μ| scores
+      studentized  — local RF mean + local RF-σ on |Y-μ|, score |Y-μ|/σ
+      cqr          — local quantile models, score max(q_lo-Y, Y-q_hi)
+
+    If return_models=True, returns (interval, models_dict) with fitted local RF
+    mean / scale (for reuse as GHCP local predictors).
+    """
+    from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
+
+    empty_models = {"rf": None, "rf_scale": None, "score_type": "absolute"}
+
+    def _ret(interval, models=None):
+        if return_models:
+            return interval, (models if models is not None else empty_models)
+        return interval
+
     x_hist = np.asarray(x_hist, dtype=float)
     y_hist = np.asarray(y_hist, dtype=float)
     if x_hist.ndim == 1:
@@ -74,9 +178,11 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, quantile_mode="det
     n_train = n_hist // 2
     n_cal = n_hist - n_train
     if n_train < 1 or n_cal < 1:
-        return (-np.inf, np.inf)
+        return _ret((-np.inf, np.inf))
 
-    perm = np.random.permutation(n_hist)
+    if rng is None:
+        rng = np.random.default_rng(None if random_seed is None else int(random_seed))
+    perm = rng.permutation(n_hist)
     train_idx = perm[:n_train]
     cal_idx = perm[n_train:]
 
@@ -84,12 +190,82 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, quantile_mode="det
     y_train = y_hist[train_idx]
     x_cal = x_hist[cal_idx]
     y_cal = y_hist[cal_idx]
+    x_target = np.asarray(x_target, dtype=float).reshape(1, -1)
 
-    x_train_aug = np.column_stack([np.ones(len(x_train)), x_train])
-    x_cal_aug = np.column_stack([np.ones(len(x_cal)), x_cal])
+    n_estimators = int(ntree)
+    min_leaf = int(nodesize)
+    min_leaf = max(1, min(min_leaf, len(y_train)))
+    max_features = "sqrt" if mtry is None else mtry
+    rs = int(rf_random_state)
+    st = str(score_type).lower().replace("-", "_")
+    if st in ("standardized", "studentised", "studentized", "std", "sigma"):
+        st = "studentized"
+    elif st in ("cqr", "conformalized_quantile", "quantile"):
+        st = "cqr"
+    else:
+        st = "absolute"
 
-    beta, *_ = np.linalg.lstsq(x_train_aug, y_train, rcond=None)
-    y_cal_pred = x_cal_aug @ beta
+    if st == "cqr":
+        a = float(alpha)
+        a = min(max(a, 1e-4), 0.49)
+        common = dict(
+            max_depth=4,
+            learning_rate=0.1,
+            max_iter=120,
+            min_samples_leaf=max(1, min(5, len(y_train))),
+            random_state=rs,
+        )
+        q_lo_m = HistGradientBoostingRegressor(loss="quantile", quantile=a / 2.0, **common)
+        q_hi_m = HistGradientBoostingRegressor(loss="quantile", quantile=1.0 - a / 2.0, **common)
+        q_lo_m.fit(x_train, y_train)
+        q_hi_m.fit(x_train, y_train)
+        lo_cal = q_lo_m.predict(x_cal)
+        hi_cal = q_hi_m.predict(x_cal)
+        scores = np.maximum(lo_cal - y_cal, y_cal - hi_cal)
+        radius = _split_conformal_radius(
+            scores, alpha, quantile_mode=quantile_mode, random_seed=random_seed, rng=rng,
+        )
+        models_cqr = {"rf": None, "rf_scale": None, "score_type": "cqr", "q_lo": q_lo_m, "q_hi": q_hi_m}
+        if not np.isfinite(radius):
+            return _ret((-np.inf, np.inf), models_cqr)
+        lo_t = float(q_lo_m.predict(x_target)[0])
+        hi_t = float(q_hi_m.predict(x_target)[0])
+        if hi_t < lo_t:
+            lo_t, hi_t = hi_t, lo_t
+        return _ret((lo_t - radius, hi_t + radius), models_cqr)
+
+    rf = RandomForestRegressor(
+        n_estimators=n_estimators,
+        min_samples_leaf=min_leaf,
+        max_features=max_features,
+        random_state=rs,
+        n_jobs=1,
+    )
+    rf.fit(x_train, y_train)
+    y_cal_pred = rf.predict(x_cal)
+    y_hat = float(rf.predict(x_target)[0])
+
+    if st == "studentized":
+        abs_tr = np.abs(y_train - rf.predict(x_train))
+        rf_s = RandomForestRegressor(
+            n_estimators=n_estimators,
+            min_samples_leaf=min_leaf,
+            max_features=max_features,
+            random_state=rs + 17,
+            n_jobs=1,
+        )
+        rf_s.fit(x_train, abs_tr)
+        s_cal = np.clip(rf_s.predict(x_cal), 1e-6, 1e12)
+        scores = np.abs(y_cal - y_cal_pred) / s_cal
+        radius = _split_conformal_radius(
+            scores, alpha, quantile_mode=quantile_mode, random_seed=random_seed, rng=rng,
+        )
+        models = {"rf": rf, "rf_scale": rf_s, "score_type": "studentized"}
+        if not np.isfinite(radius):
+            return _ret((-np.inf, np.inf), models)
+        s_t = float(np.clip(rf_s.predict(x_target)[0], 1e-6, 1e12))
+        return _ret((y_hat - radius * s_t, y_hat + radius * s_t), models)
+
     radius = _split_conformal_radius(
         np.abs(y_cal - y_cal_pred),
         alpha,
@@ -97,14 +273,10 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, quantile_mode="det
         random_seed=random_seed,
         rng=rng,
     )
-
-    x_target = np.asarray(x_target, dtype=float).reshape(1, -1)
-    x_target_aug = np.column_stack([np.ones(1), x_target])
-    y_hat = float((x_target_aug @ beta)[0])
-
+    models = {"rf": rf, "rf_scale": None, "score_type": "absolute"}
     if np.isfinite(radius):
-        return (y_hat - radius, y_hat + radius)
-    return (-np.inf, np.inf)
+        return _ret((y_hat - radius, y_hat + radius), models)
+    return _ret((-np.inf, np.inf), models)
 
 
 def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
@@ -396,6 +568,9 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
             # Standard split CP inside test group using first o points as history.
             x_hist = np.array([Z_test[i]['X'] for i in range(o)])
             y_hist = np.array([Z_test[i]['Y'] for i in range(o)])
+            stdcp_split_seed = make_quantile_seed(
+                quantile_base_seed, experiment_id, target_index, o, "stdcp_split"
+            )
             lo, hi = _compute_std_cp_interval(
                 x_hist=x_hist,
                 y_hist=y_hist,
@@ -405,6 +580,7 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
                 random_seed=make_quantile_seed(
                     quantile_base_seed, experiment_id, target_index, o, "stdcp"
                 ),
+                rng=np.random.default_rng(stdcp_split_seed),
             )
             cov_stdcp[o][t] = (lo <= true_target <= hi)
             if np.isfinite(lo) and np.isfinite(hi):
