@@ -14,15 +14,16 @@ California ACS PUMS income prediction with donor-HCP (GHCP), sample-HCP, and con
 | Row order | Permuted within PUMA each replicate |
 | Global μ | Random forest (50 trees, min leaf 5), mean within-PUMA shrinkage |
 | GHCP score | Absolute \|Y − μ\| |
-| Std-CP | Studentized \|Y − μ\| / σ (local RF σ); α = 0.2 at all o; α = 0.1 at o = 20 only |
+| Std-CP | Studentized local half/half RF (recomputed with same seeds); finite mainly at larger $o$ |
 
 ### Directory layout
 
 ```
 min21/
-├── results/          # Detailed CSVs (B = 1000 production)
-├── figures/          # Paper-style PDFs
-├── summaries/        # Long trials + by-method tables
+├── results/          # Per-alpha summaries (detailed CSVs local / gitignored)
+├── figures/          # Paper-style PDFs (B = 1000)
+├── summaries/        # Coverage/width tables for plotting
+├── stdcp_studentized/# Std-CP-only recompute manifests
 ├── logs/             # Run logs
 ├── seeds_manifest.json
 └── demo_b200/        # B = 200 verification runs (figures + summaries)
@@ -31,13 +32,20 @@ min21/
 ### Reproduce
 
 ```bash
-# Production (B = 1000): α = 0.2 full Std-CP, α = 0.1 Std-CP at o = 20 only
+# Production GHCP/HCP/baselines (B = 1000), skip Std-CP for speed
 .venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
-  --B 1000 --n_workers 8 --plot
+  --B 1000 --n_workers 7 --skip_stdcp --plot
 
-# Verification only (B = 200)
+# Recompute studentized local Std-CP with the same seeds; patch results + replot
+.venv/bin/python code/marginal/recompute_acs_stdcp_studentized_min21.py \
+  --B 1000 --n_workers 7 --alphas 0.2,0.1
+```
+
+Verification only (B = 200):
+
+```bash
 .venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
-  --B 200 --n_workers 8 --plot
+  --B 200 --n_workers 7 --skip_stdcp --plot
 ```
 
 Plot from saved results:
@@ -48,6 +56,7 @@ Plot from saved results:
 
 Core runner (all flags): `code/marginal/run_acs_experiments.py`  
 Cohort filters and design matrix: `real_data/acs/data_processing.py`
+Std-CP recompute: `code/marginal/recompute_acs_stdcp_studentized_min21.py`
 
 ## Archive
 

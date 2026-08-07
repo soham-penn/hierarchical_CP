@@ -6,8 +6,8 @@ Standard cohort filters (age 25–54, hours ≥ 40), min21 / target idx 20,
 o ∈ {0,5,10,15,20}, row permutation ON.
 
 Full suite (B=1000 default):
-  - α=0.2: GHCP absolute + studentized Std-CP at all o
-  - α=0.1: GHCP absolute + studentized Std-CP at o=20 only (placeholders elsewhere)
+  - α=0.2 and α=0.1, GHCP/HCP/baselines (use --skip_stdcp for fast runs)
+  - With Std-CP: studentized at all o (α=0.2) or o=20 only (α=0.1)
 """
 
 from __future__ import annotations
@@ -100,9 +100,9 @@ def _run_one(
     ]
     if skip_stdcp:
         cmd.append("--skip_stdcp")
-    if stdcp_score_type:
+    elif stdcp_score_type:
         cmd.extend(["--stdcp_score_type", stdcp_score_type])
-    if stdcp_o_values is not None:
+    if stdcp_o_values is not None and not skip_stdcp:
         cmd.extend(["--stdcp_o_values", ",".join(str(o) for o in stdcp_o_values)])
 
     log = SUITE_ROOT / "logs" / f"run_{tag}.log"
@@ -153,14 +153,20 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--alphas", default="0.2,0.1")
     p.add_argument("--B", type=int, default=1000)
-    p.add_argument("--n_workers", type=int, default=8)
+    p.add_argument("--n_workers", type=int, default=7)
     p.add_argument("--plot", action="store_true")
     p.add_argument(
         "--smoke",
         action="store_true",
-        help="Skip Std-CP (quick filter check only)",
+        help="Alias for --skip_stdcp (legacy name)",
+    )
+    p.add_argument(
+        "--skip_stdcp",
+        action="store_true",
+        help="Skip studentized Std-CP (GHCP/HCP/SHCP only; much faster)",
     )
     args = p.parse_args()
+    skip_stdcp = args.skip_stdcp or args.smoke
     alphas = [float(x) for x in args.alphas.split(",") if x.strip()]
 
     SUITE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -172,7 +178,7 @@ def main() -> None:
                 alphas=alphas,
                 B=args.B,
                 n_workers=args.n_workers,
-                full_stdcp=not args.smoke,
+                full_stdcp=not skip_stdcp,
             ),
             indent=2,
         )
@@ -180,8 +186,14 @@ def main() -> None:
     print(f"Wrote {man_path}", flush=True)
 
     for alpha in alphas:
-        if args.smoke:
-            _run_one(alpha=alpha, B=args.B, n_workers=args.n_workers, skip_stdcp=True)
+        if skip_stdcp:
+            _run_one(
+                alpha=alpha,
+                B=args.B,
+                n_workers=args.n_workers,
+                skip_stdcp=True,
+                stdcp_score_type=None,
+            )
             continue
         if abs(alpha - 0.2) < 1e-9:
             _run_one(

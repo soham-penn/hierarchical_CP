@@ -1,5 +1,5 @@
 {
-  "suite": "yoep_fb_extended/min21_permute",
+  "suite": "acs/min21",
   "description": "CA foreign-born YOEP>=2000, age 25\u201354, hours>=40; uniform_one_target; row permutation ON; studentized Std-CP (RF local)",
   "seed": 456,
   "quantile_base_seed": 456,
@@ -21,7 +21,7 @@
     0.2,
     0.1
   ],
-  "n_workers": 8,
+  "n_workers": 7,
   "predictor": "rf",
   "within_group_mode": "mean",
   "score_type": "absolute",
@@ -44,9 +44,7 @@
     15,
     20
   ],
-  "alpha10_stdcp_o": [
-    20
-  ],
+  "alpha10_stdcp_o": null,
   "selection_seed_formula": "seed + replicate_idx * 1009",
   "row_permutation_seed_formula": "seed + replicate_idx * 1009 + 811"
 }
