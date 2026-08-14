@@ -1,0 +1,23 @@
+ACS true marginal — interval endpoints
+============================================================
+
+Global pooled-income quantile (all filtered ACS rows, one interval):
+  lower_income = $12,730
+  upper_income = $160,138
+  width        = $147,408
+
+Donor-HCP (with local correction) at o=20 — replicate intervals (income $):
+  median lower = $-5,866
+  median upper = $119,469
+  median width = $125,335
+  replicate lower: 5%=$-39,970, 95%=$60,702
+  replicate upper: 5%=$84,260, 95%=$192,770
+
+Geometry vs global pooled interval (per replicate):
+  nested inside pooled:     15.3%
+  overlaps pooled:          100.0%
+  entirely below pooled:    0.0%
+  entirely above pooled:    0.0%
+
+Interpretation: Donor-HCP intervals vary by replicate (centered at mu_hat);
+they are not nested in each other. Compare overlap with the fixed pooled band.

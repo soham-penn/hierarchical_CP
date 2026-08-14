@@ -35,7 +35,7 @@ def _safe_width_median(width_array):
     return float(np.median(finite))
 
 
-def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
+def _split_conformal_radius(abs_residuals, alpha, quantile_mode="randomized",
                             random_seed=None, rng=None):
     """Finite-sample split-conformal radius from calibration residuals."""
     scores = np.asarray(abs_residuals, dtype=float)
@@ -74,7 +74,7 @@ def _compute_std_cp_interval_global_center(
     mu_hat_target,
     u_hist=None,
     u_target=None,
-    quantile_mode="deterministic",
+    quantile_mode="randomized",
     random_seed=None,
     rng=None,
     score_aux=None,
@@ -138,7 +138,7 @@ def _compute_std_cp_interval(
     y_hist,
     x_target,
     alpha,
-    quantile_mode="deterministic",
+    quantile_mode="randomized",
     random_seed=None,
     rng=None,
     *,
@@ -280,32 +280,37 @@ def _compute_std_cp_interval(
 
 
 def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
-                       o_values, target_index, alpha, number_subsampling_repetitions,
-                       alpha_selection, number_test_groups,
-                       mu_method_baseline, mu_method_hcp,
+                       o_values, target_index, alpha=0.1, number_subsampling_repetitions=50,
+                       alpha_selection=0.1, number_test_groups=100,
+                       mu_method_baseline=None, mu_method_hcp=None,
                        mu_method_hcp_no_within=None,
                        quantile_mode="deterministic",
                        quantile_base_seed=0,
-                       experiment_id=0):
+                       experiment_id=0,
+                       alphas=None):
     """
     Run one experiment comparing all methods across multiple o values.
 
-    All o values share the same calibration data, the same fitted model, and
-    the same test groups.  The prediction target is always Z_test[target_index],
-    so baseline methods (which ignore test-group history) produce identical
-    results for every o value — making the comparison across o values fair.
-
-    Parameters
-    ----------
-    o_values : list of int
-        History sizes to evaluate.  Each must satisfy o <= target_index.
-    target_index : int
-        0-based index of the prediction target in each test group.
-        Test groups are generated to have at least target_index+1 observations.
+    Pass ``alphas=[...]`` to evaluate several miscoverage levels on the *same*
+    simulated groups / fits. GHCP randomized (with and without WGT) reuses one
+    score pass per o; other methods still loop α but share the DGP draw.
     """
-    # ------------------------------------------------------------------
-    # 1. Generate calibration data (once for all o values)
-    # ------------------------------------------------------------------
+    alpha_list = [float(a) for a in alphas] if alphas is not None else [float(alpha)]
+    if not alpha_list:
+        raise ValueError("alphas must be non-empty")
+
+    def _by_alpha(res):
+        if isinstance(res, dict) and "by_alpha" in res:
+            return res["by_alpha"]
+        return {a: res for a in alpha_list}
+
+    def _record(cov, wid, inf, a, o, t, lo, hi, true_target):
+        cov[a][o][t] = (lo <= true_target <= hi)
+        if np.isfinite(lo) and np.isfinite(hi):
+            wid[a][o][t] = hi - lo
+        else:
+            inf[a][o] += 1
+
     cal = generate_calibration_data(
         number_groups=number_groups_k,
         lambda_Poisson=lambda_Poisson,
@@ -314,9 +319,6 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
     U_cal = cal['U_calibration']
     Z_cal = cal['Z_calibration']
 
-    # ------------------------------------------------------------------
-    # 2. Train/calib split (HCP uses independent split without donor removal)
-    # ------------------------------------------------------------------
     sample_sizes = [len(zg) for zg in Z_cal]
     train_idx, calib_idx = get_hcp_train_cal_split(
         sample_sizes=sample_sizes,
@@ -324,18 +326,12 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
         alpha_selection=alpha_selection,
     )
 
-    # ------------------------------------------------------------------
-    # 3. Fit baseline model (once)
-    # ------------------------------------------------------------------
     model_baseline = mu_method_baseline['fit_global'](
         U_matrix=U_cal,
         Z_list=Z_cal,
         group_index_vector=train_idx
     )
 
-    # ------------------------------------------------------------------
-    # 4. Compute baseline conformity scores on calib_idx (once)
-    # ------------------------------------------------------------------
     scores_list = []
     for j in calib_idx:
         Zj = Z_cal[j]
@@ -351,67 +347,71 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
         ])
         scores_list.append(absolute_residual_score(yj, muj))
 
-    # Baseline radii — fixed for the whole experiment, same across all o
-    T_hcp = compute_hcp_interval_radius(
-        scores_list, alpha,
-        quantile_mode=quantile_mode,
-        random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "hcp"),
-    )
-    T_pool = compute_pooling_interval_radius(
-        scores_list, alpha,
-        quantile_mode=quantile_mode,
-        random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "pool"),
-    )
-    T_sub = compute_subsampling_once_interval_radius(
-        scores_list, alpha,
-        quantile_mode=quantile_mode,
-        random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "sub"),
-    )
-    T_rep = compute_repeated_subsampling_interval_radius(
-        scores_list, alpha, number_subsampling_repetitions,
-        quantile_mode=quantile_mode,
-        random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "rep"),
-    )
+    # Baseline radii per alpha (scores shared)
+    T = {}
+    for a in alpha_list:
+        T[a] = {
+            'hcp': compute_hcp_interval_radius(
+                scores_list, a, quantile_mode=quantile_mode,
+                random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "hcp"),
+            ),
+            'pool': compute_pooling_interval_radius(
+                scores_list, a, quantile_mode=quantile_mode,
+                random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "pool"),
+            ),
+            'sub': compute_subsampling_once_interval_radius(
+                scores_list, a, quantile_mode=quantile_mode,
+                random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "sub"),
+            ),
+            'rep': compute_repeated_subsampling_interval_radius(
+                scores_list, a, number_subsampling_repetitions,
+                quantile_mode=quantile_mode,
+                random_seed=make_quantile_seed(quantile_base_seed, experiment_id, target_index, 0, "rep"),
+            ),
+        }
 
-    # ------------------------------------------------------------------
-    # 5. Initialise result arrays
-    #    donor-HCP/sample-HCP variants: one array per o value.
-    #    Baselines: one shared array (identical across o values).
-    # ------------------------------------------------------------------
-    cov_dr  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    cov_dr_no_within = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    cov_dd  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    cov_sr  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    cov_sd  = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    cov_stdcp = {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
-    wid_dr  = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    wid_dr_no_within = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    wid_dd  = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    wid_sr  = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    wid_sd  = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    wid_stdcp = {o: np.full(number_test_groups, np.nan) for o in o_values}
-    inf_dr  = {o: 0 for o in o_values}
-    inf_dr_no_within = {o: 0 for o in o_values}
-    inf_dd  = {o: 0 for o in o_values}
-    inf_sr  = {o: 0 for o in o_values}
-    inf_sd  = {o: 0 for o in o_values}
-    inf_stdcp = {o: 0 for o in o_values}
+    def _empty_o():
+        return {o: np.zeros(number_test_groups, dtype=bool) for o in o_values}
 
-    cov_hcp  = np.zeros(number_test_groups, dtype=bool)
-    cov_pool = np.zeros(number_test_groups, dtype=bool)
-    cov_sub  = np.zeros(number_test_groups, dtype=bool)
-    cov_rep  = np.zeros(number_test_groups, dtype=bool)
-    wid_hcp  = np.full(number_test_groups, np.nan)
-    wid_pool = np.full(number_test_groups, np.nan)
-    wid_sub  = np.full(number_test_groups, np.nan)
-    wid_rep  = np.full(number_test_groups, np.nan)
-    inf_hcp = inf_pool = inf_sub = inf_rep = 0
+    def _empty_w():
+        return {o: np.full(number_test_groups, np.nan) for o in o_values}
 
-    # ------------------------------------------------------------------
-    # 6. Evaluate on test groups
-    # ------------------------------------------------------------------
+    def _empty_inf():
+        return {o: 0 for o in o_values}
+
+    cov_dr = {a: _empty_o() for a in alpha_list}
+    cov_dr_no = {a: _empty_o() for a in alpha_list}
+    cov_dd = {a: _empty_o() for a in alpha_list}
+    cov_sr = {a: _empty_o() for a in alpha_list}
+    cov_sd = {a: _empty_o() for a in alpha_list}
+    cov_stdcp = {a: _empty_o() for a in alpha_list}
+    wid_dr = {a: _empty_w() for a in alpha_list}
+    wid_dr_no = {a: _empty_w() for a in alpha_list}
+    wid_dd = {a: _empty_w() for a in alpha_list}
+    wid_sr = {a: _empty_w() for a in alpha_list}
+    wid_sd = {a: _empty_w() for a in alpha_list}
+    wid_stdcp = {a: _empty_w() for a in alpha_list}
+    inf_dr = {a: _empty_inf() for a in alpha_list}
+    inf_dr_no = {a: _empty_inf() for a in alpha_list}
+    inf_dd = {a: _empty_inf() for a in alpha_list}
+    inf_sr = {a: _empty_inf() for a in alpha_list}
+    inf_sd = {a: _empty_inf() for a in alpha_list}
+    inf_stdcp = {a: _empty_inf() for a in alpha_list}
+
+    cov_hcp = {a: np.zeros(number_test_groups, dtype=bool) for a in alpha_list}
+    cov_pool = {a: np.zeros(number_test_groups, dtype=bool) for a in alpha_list}
+    cov_sub = {a: np.zeros(number_test_groups, dtype=bool) for a in alpha_list}
+    cov_rep = {a: np.zeros(number_test_groups, dtype=bool) for a in alpha_list}
+    wid_hcp = {a: np.full(number_test_groups, np.nan) for a in alpha_list}
+    wid_pool = {a: np.full(number_test_groups, np.nan) for a in alpha_list}
+    wid_sub = {a: np.full(number_test_groups, np.nan) for a in alpha_list}
+    wid_rep = {a: np.full(number_test_groups, np.nan) for a in alpha_list}
+    inf_hcp = {a: 0 for a in alpha_list}
+    inf_pool = {a: 0 for a in alpha_list}
+    inf_sub = {a: 0 for a in alpha_list}
+    inf_rep = {a: 0 for a in alpha_list}
+
     for t in range(number_test_groups):
-        # Generate test group ensuring N >= target_index + 1
         test = generate_test_group(
             lambda_Poisson=lambda_Poisson,
             dgp_specification=dgp_specification,
@@ -420,213 +420,168 @@ def run_one_experiment(number_groups_k, lambda_Poisson, dgp_specification,
         U_test = test['U_test']
         Z_test = test['Z_test']
         N_test = test['N_test']
-
         if N_test < target_index + 1:
             continue
 
         true_target = Z_test[target_index]['Y']
-        X_target    = Z_test[target_index]['X']
-
-        # Baseline center prediction — fixed target, same for all o
+        X_target = Z_test[target_index]['X']
         mu_baseline_hat = mu_method_baseline['predict_global'](
             model_global=model_baseline,
             x_vector=X_target,
             u_vector=U_test[0, :]
         )
 
-        # ---- Baseline methods (computed once per test group) ----
-        for T, cov_arr, wid_arr in [
-            (T_hcp,  cov_hcp,  wid_hcp),
-            (T_pool, cov_pool, wid_pool),
-            (T_sub,  cov_sub,  wid_sub),
-            (T_rep,  cov_rep,  wid_rep),
-        ]:
-            lo = mu_baseline_hat - T if np.isfinite(T) else -np.inf
-            hi = mu_baseline_hat + T if np.isfinite(T) else  np.inf
-            cov_arr[t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_arr[t] = hi - lo
-        if not np.isfinite(T_hcp):  inf_hcp  += 1
-        if not np.isfinite(T_pool): inf_pool += 1
-        if not np.isfinite(T_sub):  inf_sub  += 1
-        if not np.isfinite(T_rep):  inf_rep  += 1
+        for a in alpha_list:
+            for key, cov_arr, wid_arr, inf_arr in [
+                ('hcp', cov_hcp, wid_hcp, inf_hcp),
+                ('pool', cov_pool, wid_pool, inf_pool),
+                ('sub', cov_sub, wid_sub, inf_sub),
+                ('rep', cov_rep, wid_rep, inf_rep),
+            ]:
+                Trad = T[a][key]
+                lo = mu_baseline_hat - Trad if np.isfinite(Trad) else -np.inf
+                hi = mu_baseline_hat + Trad if np.isfinite(Trad) else np.inf
+                cov_arr[a][t] = (lo <= true_target <= hi)
+                if np.isfinite(lo) and np.isfinite(hi):
+                    wid_arr[a][t] = hi - lo
+                else:
+                    inf_arr[a] += 1
 
-        # ---- donor-HCP and sample-HCP variants for each o ----
         for o in o_values:
+            # GHCP ± WGT: one fit/score pass for all alphas
             res_dr = compute_donor_hcp_randomized_interval(
-                U_calibration=U_cal,
-                Z_calibration=Z_cal,
-                U_test=U_test,
-                Z_test=Z_test,
-                o_observed=o,
-                alpha=alpha,
-                alpha_selection=alpha_selection,
-                mu_method=mu_method_hcp,
-                test_index_target=target_index,
-                quantile_mode=quantile_mode,
+                U_calibration=U_cal, Z_calibration=Z_cal,
+                U_test=U_test, Z_test=Z_test,
+                o_observed=o, alpha=alpha_list[0],
+                alpha_selection=alpha_selection, mu_method=mu_method_hcp,
+                test_index_target=target_index, quantile_mode=quantile_mode,
                 quantile_random_seed=make_quantile_seed(
                     quantile_base_seed, experiment_id, target_index, o, "donor_hcp"
                 ),
+                alphas=alpha_list,
             )
-            lo, hi = res_dr['interval']
-            cov_dr[o][t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_dr[o][t] = hi - lo
-            else:
-                inf_dr[o] += 1
+            for a, ra in _by_alpha(res_dr).items():
+                lo, hi = ra['interval']
+                _record(cov_dr, wid_dr, inf_dr, a, o, t, lo, hi, true_target)
 
             if mu_method_hcp_no_within is not None:
                 res_dr_no = compute_donor_hcp_randomized_interval(
-                    U_calibration=U_cal,
-                    Z_calibration=Z_cal,
-                    U_test=U_test,
-                    Z_test=Z_test,
-                    o_observed=o,
-                    alpha=alpha,
-                    alpha_selection=alpha_selection,
-                    mu_method=mu_method_hcp_no_within,
-                    test_index_target=target_index,
-                    tau_override=0,
+                    U_calibration=U_cal, Z_calibration=Z_cal,
+                    U_test=U_test, Z_test=Z_test,
+                    o_observed=o, alpha=alpha_list[0],
+                    alpha_selection=alpha_selection, mu_method=mu_method_hcp_no_within,
+                    test_index_target=target_index, tau_override=0,
                     quantile_mode=quantile_mode,
                     quantile_random_seed=make_quantile_seed(
                         quantile_base_seed, experiment_id, target_index, o, "donor_hcp_no_within"
                     ),
+                    alphas=alpha_list,
                 )
-                lo, hi = res_dr_no['interval']
-                cov_dr_no_within[o][t] = (lo <= true_target <= hi)
-                if np.isfinite(lo) and np.isfinite(hi):
-                    wid_dr_no_within[o][t] = hi - lo
-                else:
-                    inf_dr_no_within[o] += 1
+                for a, ra in _by_alpha(res_dr_no).items():
+                    lo, hi = ra['interval']
+                    _record(cov_dr_no, wid_dr_no, inf_dr_no, a, o, t, lo, hi, true_target)
 
-            res_dd = compute_donor_hcp_derandomized_interval(
-                U_calibration=U_cal,
-                Z_calibration=Z_cal,
-                U_test=U_test,
-                Z_test=Z_test,
-                o_observed=o,
-                alpha=alpha,
-                test_index_target=target_index,
-                alpha_selection=alpha_selection,
-                mu_method=mu_method_hcp,
-                quantile_mode=quantile_mode,
-                quantile_random_seed=make_quantile_seed(
-                    quantile_base_seed, experiment_id, target_index, o, "donor_hcp_derand"
-                ),
-            )
-            lo, hi = res_dd['interval']
-            cov_dd[o][t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_dd[o][t] = hi - lo
-            else:
-                inf_dd[o] += 1
+            # Remaining methods: still α-loop (smaller share of runtime)
+            for a in alpha_list:
+                res_dd = compute_donor_hcp_derandomized_interval(
+                    U_calibration=U_cal, Z_calibration=Z_cal,
+                    U_test=U_test, Z_test=Z_test,
+                    o_observed=o, alpha=a, test_index_target=target_index,
+                    alpha_selection=alpha_selection, mu_method=mu_method_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, experiment_id, target_index, o, "donor_hcp_derand"
+                    ),
+                )
+                lo, hi = res_dd['interval']
+                _record(cov_dd, wid_dd, inf_dd, a, o, t, lo, hi, true_target)
 
-            res_sr = compute_sample_hcp_randomized_interval(
-                U_calibration=U_cal,
-                Z_calibration=Z_cal,
-                U_test=U_test,
-                Z_test=Z_test,
-                o_observed=o,
-                alpha=alpha,
-                test_index_target=target_index,
-                alpha_selection=alpha_selection,
-                mu_method=mu_method_hcp,
-                quantile_mode=quantile_mode,
-                quantile_random_seed=make_quantile_seed(
-                    quantile_base_seed, experiment_id, target_index, o, "sample_hcp"
-                ),
-            )
-            lo, hi = res_sr['interval']
-            cov_sr[o][t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_sr[o][t] = hi - lo
-            else:
-                inf_sr[o] += 1
+                res_sr = compute_sample_hcp_randomized_interval(
+                    U_calibration=U_cal, Z_calibration=Z_cal,
+                    U_test=U_test, Z_test=Z_test,
+                    o_observed=o, alpha=a, test_index_target=target_index,
+                    alpha_selection=alpha_selection, mu_method=mu_method_hcp,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, experiment_id, target_index, o, "sample_hcp"
+                    ),
+                )
+                lo, hi = res_sr['interval']
+                _record(cov_sr, wid_sr, inf_sr, a, o, t, lo, hi, true_target)
 
-            res_sd = compute_sample_hcp_derandomized_interval(
-                U_calibration=U_cal,
-                Z_calibration=Z_cal,
-                U_test=U_test,
-                Z_test=Z_test,
-                o_observed=o,
-                alpha=alpha,
-                alpha_selection=alpha_selection,
-                mu_method=mu_method_hcp,
-                test_index_target=target_index,
-                quantile_mode=quantile_mode,
-                quantile_random_seed=make_quantile_seed(
-                    quantile_base_seed, experiment_id, target_index, o, "sample_hcp_derand"
-                ),
-            )
-            lo, hi = res_sd['interval']
-            cov_sd[o][t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_sd[o][t] = hi - lo
-            else:
-                inf_sd[o] += 1
+                res_sd = compute_sample_hcp_derandomized_interval(
+                    U_calibration=U_cal, Z_calibration=Z_cal,
+                    U_test=U_test, Z_test=Z_test,
+                    o_observed=o, alpha=a, alpha_selection=alpha_selection,
+                    mu_method=mu_method_hcp, test_index_target=target_index,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=make_quantile_seed(
+                        quantile_base_seed, experiment_id, target_index, o, "sample_hcp_derand"
+                    ),
+                )
+                lo, hi = res_sd['interval']
+                _record(cov_sd, wid_sd, inf_sd, a, o, t, lo, hi, true_target)
 
-            # Standard split CP inside test group using first o points as history.
-            x_hist = np.array([Z_test[i]['X'] for i in range(o)])
-            y_hist = np.array([Z_test[i]['Y'] for i in range(o)])
-            stdcp_split_seed = make_quantile_seed(
-                quantile_base_seed, experiment_id, target_index, o, "stdcp_split"
-            )
-            lo, hi = _compute_std_cp_interval(
-                x_hist=x_hist,
-                y_hist=y_hist,
-                x_target=X_target,
-                alpha=alpha,
-                quantile_mode=quantile_mode,
-                random_seed=make_quantile_seed(
-                    quantile_base_seed, experiment_id, target_index, o, "stdcp"
-                ),
-                rng=np.random.default_rng(stdcp_split_seed),
-            )
-            cov_stdcp[o][t] = (lo <= true_target <= hi)
-            if np.isfinite(lo) and np.isfinite(hi):
-                wid_stdcp[o][t] = hi - lo
-            else:
-                inf_stdcp[o] += 1
+                x_hist = np.array([Z_test[i]['X'] for i in range(o)])
+                y_hist = np.array([Z_test[i]['Y'] for i in range(o)])
+                stdcp_split_seed = make_quantile_seed(
+                    quantile_base_seed, experiment_id, target_index, o, "stdcp_split"
+                )
+                lo, hi = _compute_std_cp_interval(
+                    x_hist=x_hist, y_hist=y_hist, x_target=X_target, alpha=a,
+                    # Std-CP only: randomized split CP (HCP/GHCP keep quantile_mode).
+                    quantile_mode="randomized",
+                    random_seed=make_quantile_seed(
+                        quantile_base_seed, experiment_id, target_index, o, "stdcp"
+                    ),
+                    rng=np.random.default_rng(stdcp_split_seed),
+                )
+                _record(cov_stdcp, wid_stdcp, inf_stdcp, a, o, t, lo, hi, true_target)
 
-    # ------------------------------------------------------------------
-    # 7. Aggregate: one row per o value; baselines replicated across o
-    # ------------------------------------------------------------------
     rows = []
-    for o in o_values:
-        rows.append({
-            'o_observed':          o,
-            'quantile_mode':       quantile_mode,
-            'coverage_donor_hcp_randomized': np.mean(cov_dr[o]),
-            'coverage_donor_hcp_no_within': np.mean(cov_dr_no_within[o]) if mu_method_hcp_no_within is not None else np.nan,
-            'coverage_donor_hcp_derandomized': np.mean(cov_dd[o]),
-            'coverage_sample_hcp_randomized': np.mean(cov_sr[o]),
-            'coverage_sample_hcp_derandomized': np.mean(cov_sd[o]),
-            'coverage_stdcp':     np.mean(cov_stdcp[o]),
-            'coverage_hcp':        np.mean(cov_hcp),
-            'coverage_pool':       np.mean(cov_pool),
-            'coverage_sub':        np.mean(cov_sub),
-            'coverage_rep':        np.mean(cov_rep),
-            'width_donor_hcp_randomized': _safe_width_median(wid_dr[o]),
-            'width_donor_hcp_no_within': _safe_width_median(wid_dr_no_within[o]) if mu_method_hcp_no_within is not None else np.nan,
-            'width_donor_hcp_derandomized': _safe_width_median(wid_dd[o]),
-            'width_sample_hcp_randomized': _safe_width_median(wid_sr[o]),
-            'width_sample_hcp_derandomized': _safe_width_median(wid_sd[o]),
-            'width_stdcp':        _safe_width_median(wid_stdcp[o]),
-            'width_hcp':           _safe_width_median(wid_hcp),
-            'width_pool':          _safe_width_median(wid_pool),
-            'width_sub':           _safe_width_median(wid_sub),
-            'width_rep':           _safe_width_median(wid_rep),
-            'infinite_donor_hcp_randomized': inf_dr[o],
-            'infinite_donor_hcp_no_within': inf_dr_no_within[o] if mu_method_hcp_no_within is not None else np.nan,
-            'infinite_donor_hcp_derandomized': inf_dd[o],
-            'infinite_sample_hcp_randomized': inf_sr[o],
-            'infinite_sample_hcp_derandomized': inf_sd[o],
-            'infinite_stdcp':     inf_stdcp[o],
-            'infinite_hcp':        inf_hcp,
-            'infinite_pool':       inf_pool,
-            'infinite_sub':        inf_sub,
-            'infinite_rep':        inf_rep,
-        })
+    for a in alpha_list:
+        for o in o_values:
+            rows.append({
+                'alpha': a,
+                'o_observed': o,
+                'quantile_mode': quantile_mode,
+                'coverage_donor_hcp_randomized': np.mean(cov_dr[a][o]),
+                'coverage_donor_hcp_no_within': (
+                    np.mean(cov_dr_no[a][o]) if mu_method_hcp_no_within is not None else np.nan
+                ),
+                'coverage_donor_hcp_derandomized': np.mean(cov_dd[a][o]),
+                'coverage_sample_hcp_randomized': np.mean(cov_sr[a][o]),
+                'coverage_sample_hcp_derandomized': np.mean(cov_sd[a][o]),
+                'coverage_stdcp': np.mean(cov_stdcp[a][o]),
+                'coverage_hcp': np.mean(cov_hcp[a]),
+                'coverage_pool': np.mean(cov_pool[a]),
+                'coverage_sub': np.mean(cov_sub[a]),
+                'coverage_rep': np.mean(cov_rep[a]),
+                'width_donor_hcp_randomized': _safe_width_median(wid_dr[a][o]),
+                'width_donor_hcp_no_within': (
+                    _safe_width_median(wid_dr_no[a][o]) if mu_method_hcp_no_within is not None else np.nan
+                ),
+                'width_donor_hcp_derandomized': _safe_width_median(wid_dd[a][o]),
+                'width_sample_hcp_randomized': _safe_width_median(wid_sr[a][o]),
+                'width_sample_hcp_derandomized': _safe_width_median(wid_sd[a][o]),
+                'width_stdcp': _safe_width_median(wid_stdcp[a][o]),
+                'width_hcp': _safe_width_median(wid_hcp[a]),
+                'width_pool': _safe_width_median(wid_pool[a]),
+                'width_sub': _safe_width_median(wid_sub[a]),
+                'width_rep': _safe_width_median(wid_rep[a]),
+                'infinite_donor_hcp_randomized': inf_dr[a][o],
+                'infinite_donor_hcp_no_within': (
+                    inf_dr_no[a][o] if mu_method_hcp_no_within is not None else np.nan
+                ),
+                'infinite_donor_hcp_derandomized': inf_dd[a][o],
+                'infinite_sample_hcp_randomized': inf_sr[a][o],
+                'infinite_sample_hcp_derandomized': inf_sd[a][o],
+                'infinite_stdcp': inf_stdcp[a][o],
+                'infinite_hcp': inf_hcp[a],
+                'infinite_pool': inf_pool[a],
+                'infinite_sub': inf_sub[a],
+                'infinite_rep': inf_rep[a],
+            })
     return pd.DataFrame(rows)
 
 
@@ -638,19 +593,20 @@ def run_experiments_outer(number_experiments, number_groups_k, lambda_Poisson,
                           mu_method_hcp_no_within=None,
                           show_progress=True,
                           quantile_mode="deterministic",
-                          quantile_base_seed=0):
+                          quantile_base_seed=0,
+                          alphas=None):
     """
     Run multiple experiments and return combined results.
 
-    Parameters
-    ----------
-    o_values : list of int
-        History sizes to evaluate within each experiment.
-    target_index : int
-        0-based index of the fixed prediction target in each test group.
+    If ``alphas`` is provided, each replicate is evaluated at all listed
+    miscoverage levels on the same simulated data (see ``run_one_experiment``).
     """
     if show_progress:
-        print(f"Running {number_experiments} experiments sequentially...")
+        al = alphas if alphas is not None else [alpha]
+        print(
+            f"Running {number_experiments} experiments sequentially "
+            f"(alphas={list(al)})..."
+        )
 
     results_list = []
     for e in range(number_experiments):
@@ -664,6 +620,7 @@ def run_experiments_outer(number_experiments, number_groups_k, lambda_Poisson,
             o_values=o_values,
             target_index=target_index,
             alpha=alpha,
+            alphas=alphas,
             number_subsampling_repetitions=number_subsampling_repetitions,
             alpha_selection=alpha_selection,
             number_test_groups=number_test_groups,

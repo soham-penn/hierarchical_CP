@@ -892,15 +892,15 @@ def _boxplot_style(ax, data, pos, color, width=0.58, edge_color=None, hatch=None
 
 
 def plot_dhcp_vs_hcp_stratified(df, output_dir):
-    """Plot D-HCP vs HCP comparison."""
+    """Plot GHCP vs HCP comparison."""
     o_vals = sorted([int(o) for o in df["o"].unique() if int(o) <= 20])
 
     fig, axes = plt.subplots(1, 2, figsize=(21.0, 8.9))
     fig.subplots_adjust(wspace=0.32)
 
     for ax, metric_col, ylabel, title in [
-        (axes[0], "coverage", "Coverage", "Coverage: D-HCP vs HCP"),
-        (axes[1], "width_income", "Width (income units)", "Width: D-HCP vs HCP"),
+        (axes[0], "coverage", "Coverage", "Coverage: GHCP vs HCP"),
+        (axes[1], "width_income", "Width (income units)", "Width: GHCP vs HCP"),
     ]:
         pos = 0.0
         tick_positions = []
@@ -948,7 +948,7 @@ def plot_dhcp_vs_hcp_stratified(df, output_dir):
 
 
 def plot_dhcp_vs_baselines_stratified(df, output_dir):
-    """Plot D-HCP vs all baselines comparison."""
+    """Plot GHCP vs all baselines comparison."""
     o_vals = sorted([int(o) for o in df["o"].unique()])
 
     for metric, metric_col, ylabel in [("coverage", "coverage", "Coverage"), 
@@ -1004,7 +1004,7 @@ def plot_dhcp_vs_baselines_stratified(df, output_dir):
         else:
             ax.set_ylim(bottom=50000)
             ax.yaxis.set_major_formatter(FuncFormatter(_human_number_format))
-        ax.set_title(f"{ylabel}: D-HCP vs baselines", fontsize=28, fontweight="bold")
+        ax.set_title(f"{ylabel}: GHCP vs baselines", fontsize=28, fontweight="bold")
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)

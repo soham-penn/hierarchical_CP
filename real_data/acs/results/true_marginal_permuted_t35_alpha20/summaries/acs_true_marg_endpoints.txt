@@ -1,7 +1,0 @@
-ACS true marginal — interval endpoints
-============================================================
-
-Global pooled-income quantile (all filtered ACS rows, one interval):
-  lower_income = $18,000
-  upper_income = $150,000
-  width        = $132,000

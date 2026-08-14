@@ -38,6 +38,7 @@ ACS_DIR = REAL_DATA_DIR / "acs"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REAL_DATA_DIR))
 
+from code.paths import PLOTS_MARGINAL, RESULTS_MARGINAL
 from acs.data_processing import load_and_clean_acs_pums, build_design_matrix_acs
 
 from methods.mu_methods import (
@@ -157,7 +158,7 @@ def _result_dir_name(
 OUTCOME_SCALE_CHOICES = ("log1p", "income")
 WITHIN_GROUP_MODE_CHOICES = ("mean", "correction")
 LOCAL_ADJUSTMENT_CLIP = {"log1p": 0.5, "income": 50_000.0}
-PLOTS_ACS_ROOT = REPO_ROOT / "plots_marginal" / "acs"
+PLOTS_ACS_ROOT = PLOTS_MARGINAL / "acs"
 
 
 def _acs_paper_suite_subdir(
@@ -171,7 +172,7 @@ def _acs_paper_suite_subdir(
     min_income: float | None = 10000.0,
     design: str = "marginal",
 ) -> str | None:
-    """Subfolder under plots_marginal/acs for income-scale paper artifacts."""
+    """Subfolder under paper-results/acs for income-scale paper artifacts."""
     if outcome_scale != "income":
         return None
     if design == "marginal_uniform":
@@ -244,7 +245,7 @@ def _acs_output_dir(
     score_type: str = "absolute",
     stdcp_score_type: str | None = None,
 ) -> Path:
-    """Write ACS artifacts under plots_marginal/acs/{suite}/results/ when on income scale."""
+    """Write ACS artifacts under paper-results/acs/{suite}/results/ when on income scale."""
     run_tag = _result_dir_name(
         permuted=permuted,
         alpha_str=alpha_str,
@@ -260,7 +261,7 @@ def _acs_output_dir(
         score_type=score_type,
         stdcp_score_type=stdcp_score_type,
     )
-    # Fully studentized ACS runs land in plots_marginal/acs/studentized/
+    # Fully studentized ACS runs land in paper-results/acs/studentized/
     if str(score_type).lower() == "studentized" and outcome_scale == "income":
         return PLOTS_ACS_ROOT / "studentized" / "results" / run_tag
     suite = _acs_paper_suite_subdir(
@@ -277,7 +278,7 @@ def _acs_output_dir(
         if suite == "ols/legacy_mean":
             run_tag = f"true_marginal_permuted_income_{alpha_str}"
         return PLOTS_ACS_ROOT / suite / "results" / run_tag
-    return REPO_ROOT / "results_marginal" / "acs" / run_tag
+    return RESULTS_MARGINAL / "acs" / run_tag
 
 
 def _outcome_transform(outcome_scale: str):
@@ -313,7 +314,7 @@ def _width_income_from_log1p_interval(interval):
     return _width_income_from_interval(interval, outcome_scale="log1p")
 
 
-def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
+def _split_conformal_radius(abs_residuals, alpha, quantile_mode="randomized",
                             random_seed=None, rng=None):
     """Finite-sample split-conformal radius from calibration residuals."""
     scores = np.asarray(abs_residuals, dtype=float)
@@ -322,9 +323,13 @@ def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
     if n == 0:
         return np.inf
     if quantile_mode == "randomized":
+        # Append +∞ so randomized split CP targets exact 1-α coverage
+        # (same augmentation as DGP Std-CP / donor-HCP test-only split).
+        scores = np.append(scores, np.inf)
+        weights = np.ones(len(scores), dtype=float) / len(scores)
         return conformal_threshold(
             scores=scores,
-            weights=None,
+            weights=weights,
             alpha=alpha,
             quantile_mode="randomized",
             random_seed=random_seed,
@@ -341,7 +346,7 @@ def _split_conformal_radius(abs_residuals, alpha, quantile_mode="deterministic",
 
 
 def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng,
-                             quantile_mode="deterministic", quantile_random_seed=None,
+                             quantile_mode="randomized", quantile_random_seed=None,
                              ntree=None, nodesize=None, rf_random_state=None,
                              score_type="absolute",
                              return_intermediates=False):
@@ -465,7 +470,7 @@ def _compute_std_cp_interval(x_hist, y_hist, x_target, alpha, rng,
 def _compute_std_cp_interval_global_center(
     x_hist, y_hist, x_target, alpha, *,
     mu_hat_hist, mu_hat_target,
-    quantile_mode="deterministic", quantile_random_seed=None, rng=None,
+    quantile_mode="randomized", quantile_random_seed=None, rng=None,
     score_aux=None,
 ):
     """
@@ -624,6 +629,7 @@ def _make_mu_hcp(config):
             ntree=RF_NTREE,
             nodesize=RF_NODESIZE,
             random_state=RF_RANDOM_STATE,
+            c=1.0,  # Eq. (4): w_g = |Strain| / (|Strain| + τ)
         )
     elif predictor == "ols" and within_group_mode == "correction":
         mu_hcp = create_mu_method_ols_residual_correction(
@@ -1399,6 +1405,7 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
     alpha_sel = config.get('alpha_selection', 0.5)
     n_rep = config.get('n_repeated', 50)
     quantile_mode = config.get('quantile_mode', 'deterministic')
+    stdcp_quantile_mode = str(config.get('stdcp_quantile_mode', 'randomized'))
     quantile_base_seed = config.get('quantile_base_seed', config['seed'])
     outcome_scale = str(config.get('outcome_scale', 'log1p'))
     n_calib_per_stratum = config.get('n_calib_per_stratum', 5)
@@ -1694,7 +1701,7 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
                     alpha=alpha,
                     mu_hat_hist=mu_hist,
                     mu_hat_target=mu_hat_baseline,
-                    quantile_mode=quantile_mode,
+                    quantile_mode=stdcp_quantile_mode,
                     quantile_random_seed=make_quantile_seed(
                         quantile_base_seed, replicate_idx, target_index, o, "stdcp"
                     ),
@@ -1720,7 +1727,7 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
                     x_target=x_target,
                     alpha=alpha,
                     rng=stdcp_rng,
-                    quantile_mode=quantile_mode,
+                    quantile_mode=stdcp_quantile_mode,
                     quantile_random_seed=make_quantile_seed(
                         quantile_base_seed, replicate_idx, target_index, o, "stdcp"
                     ),
@@ -1788,6 +1795,7 @@ def run_one_replicate_avg_over_targets(
     alpha_sel = config.get('alpha_selection', 0.5)
     n_rep = config.get('n_repeated', 50)
     quantile_mode = config.get('quantile_mode', 'deterministic')
+    stdcp_quantile_mode = str(config.get('stdcp_quantile_mode', 'randomized'))
     quantile_base_seed = config.get('quantile_base_seed', config['seed'])
     outcome_scale = str(config.get('outcome_scale', 'log1p'))
     truncate_n = config.get('truncate_n', None)
@@ -1970,7 +1978,7 @@ def run_one_replicate_avg_over_targets(
                         alpha=alpha,
                         mu_hat_hist=mu_hist,
                         mu_hat_target=mu_hat_baseline,
-                        quantile_mode=quantile_mode,
+                        quantile_mode=stdcp_quantile_mode,
                         quantile_random_seed=make_quantile_seed(
                             quantile_base_seed, replicate_idx, target_index, o, "stdcp"
                         ),
@@ -1984,7 +1992,7 @@ def run_one_replicate_avg_over_targets(
                         x_target=x_target,
                         alpha=alpha,
                         rng=stdcp_rng,
-                        quantile_mode=quantile_mode,
+                        quantile_mode=stdcp_quantile_mode,
                         quantile_random_seed=make_quantile_seed(
                             quantile_base_seed, replicate_idx, target_index, o, "stdcp"
                         ),
@@ -2433,7 +2441,13 @@ if __name__ == '__main__':
         '--quantile-mode',
         choices=['deterministic', 'randomized'],
         default='deterministic',
-        help='Conformal threshold selection for all methods.',
+        help='Conformal threshold selection for HCP/GHCP/baselines (not Std-CP).',
+    )
+    parser.add_argument(
+        '--stdcp-quantile-mode',
+        choices=['deterministic', 'randomized'],
+        default='randomized',
+        help='Conformal threshold selection for Std-CP only (default: randomized).',
     )
     parser.add_argument(
         '--quantile-base-seed',
@@ -2557,7 +2571,7 @@ if __name__ == '__main__':
         help=(
             'GHCP/HCP/baseline nonconformity: absolute |Y-μ| (default) or studentized '
             '|Y-μ|/σ (RF-σ). Fully studentized ACS runs write under '
-            'plots_marginal/acs/studentized/.'
+            'paper-results/acs/studentized/.'
         ),
     )
     parser.add_argument(
@@ -2796,6 +2810,7 @@ if __name__ == '__main__':
         'alpha': args.alpha,
         'alpha_selection': 0.5,
         'quantile_mode': args.quantile_mode,
+        'stdcp_quantile_mode': args.stdcp_quantile_mode,
         'quantile_base_seed': args.quantile_base_seed,
         'n_repeated': 50,
         'n_puma_groups': args.n_puma_groups,
@@ -2894,7 +2909,8 @@ if __name__ == '__main__':
         if not args.no_within_group and args.predictor in ("ols", "rf"):
             print(f"  {args.predictor.upper()} within-group mode: {args.within_group_mode}")
         print(f"  Donor-HCP: stock randomized interval; within-group training = {not args.no_within_group}")
-        print(f"  Conformal quantile mode: {args.quantile_mode}")
+        print(f"  Conformal quantile mode (HCP/GHCP/baselines): {args.quantile_mode}")
+        print(f"  Std-CP quantile mode: {config['stdcp_quantile_mode']}")
         print(f"  GHCP/HCP score type: {config['score_type']}")
         print(f"  Std-CP score type: {config['stdcp_score_type']}")
         print(f"  Std-CP center: {args.stdcp_center}")
@@ -2939,7 +2955,7 @@ if __name__ == '__main__':
                 },
             )
 
-    # Save results (income-scale runs -> plots_marginal/acs/{suite}/results/)
+    # Save results (income-scale runs -> paper-results/acs/{suite}/results/)
     alpha_str = alpha_to_tag(config['alpha'])  # e.g., "alpha10" or "alpha07p5"
     predictor_for_output = config.get('predictor', args.predictor)
     outcome_scale_for_output = config.get('outcome_scale', args.outcome_scale)

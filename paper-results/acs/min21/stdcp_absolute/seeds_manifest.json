@@ -1,0 +1,27 @@
+{
+  "suite": "acs/min21/stdcp_absolute",
+  "seed": 456,
+  "quantile_base_seed": 456,
+  "stdcp_score_type": "absolute",
+  "stdcp_center": "local",
+  "half_split": "random half of first o target-PUMA rows (train), other half (cal)",
+  "selection_seed_formula": "seed + replicate_idx * 1009",
+  "row_permutation_seed_formula": "seed + replicate_idx * 1009 + 811",
+  "stdcp_split_seed": "make_quantile_seed(..., 'stdcp_split')",
+  "B": 1000,
+  "alphas": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ],
+  "o_values": [
+    0,
+    5,
+    10,
+    15,
+    20
+  ],
+  "permute_rows": true,
+  "note": "Same seeds as studentized recompute; does not patch paper suite."
+}

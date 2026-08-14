@@ -3,10 +3,10 @@
 
 Canonical Simulations suite (paper):
   dgp_rf  — latent intercept γ=5, RF global μ, absolute residual score
-            plots → plots_marginal/dgp_true_marginal_rf/
-            raw   → results_marginal/dgp/true_marg_latent_rf_gamma5p0_*
+            plots → paper-results/dgp_true_marginal_rf/
+            raw   → paper-results/results_marginal/dgp/true_marg_latent_rf_gamma5p0_*
 
-ACS plotting wrappers remain available; the active real-data suite is `plots_marginal/acs/min21/`.
+ACS plotting wrappers remain available; the active real-data suite is `paper-results/acs/min21/`.
 Alternate DGP suites (OLS, γ=0, studentized, capture, …) live under old/code/.
 """
 
@@ -76,7 +76,7 @@ def _append_stdcp_o_panels(
     *,
     alphas: tuple[float, ...] = (0.05, 0.10),
     fixed_label: str = r"Fixed $N_k=21$",
-    poisson_label: str = "Poisson",
+    poisson_label: str = r"Poisson $N_k\sim\mathrm{Poi}(25)$",
 ) -> None:
     for alpha in alphas:
         outputs.append(
@@ -134,16 +134,16 @@ def _build_dgp_rf() -> list[Path]:
             poisson_summary,
             pm.O_VALUES,
             "poisson_1_dhcp_coverage_lines_width_boxplots_by_alpha.pdf",
-            f"Poisson ({rf_label})",
+            f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})",
         ),
         pm.plot_coverage_width_line_bands(
             poisson_summary,
             pm.O_VALUES,
             "poisson_2_dhcp_coverage_width_line_bands_by_alpha.pdf",
-            f"Poisson ({rf_label})",
+            f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})",
         ),
         pm.plot_with_vs_no_within_alpha10(
-            poisson_trials, poisson_summary, f"Poisson ({rf_label})", "poisson_3"
+            poisson_trials, poisson_summary, f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})", "poisson_3"
         ),
         pm.plot_coverage_lines_width_boxplots(
             fixed_trials[fixed_trials["o"].isin(pm.FIXED_NOMINAL_O_VALUES)],
@@ -170,7 +170,7 @@ def _build_dgp_rf() -> list[Path]:
         )
         outputs.append(
             pm.plot_alpha_o_axis_panel(
-                poisson_trials, poisson_summary, alpha, f"Poisson ({rf_label})", "poisson"
+                poisson_trials, poisson_summary, alpha, f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})", "poisson"
             )
         )
         outputs.extend(
@@ -190,7 +190,7 @@ def _build_dgp_rf() -> list[Path]:
                 alpha,
                 pm.O_VALUES,
                 "poisson",
-                f"Poisson ({rf_label})",
+                f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})",
             )
         )
     outputs.append(
@@ -212,12 +212,18 @@ def _build_dgp_rf() -> list[Path]:
         poisson_summary,
         alphas=(0.05, 0.10),
         fixed_label=rf"Fixed $N_k=21$ ({rf_label})",
-        poisson_label=f"Poisson ({rf_label})",
+        poisson_label=f"Poisson $N_k\\sim\\mathrm{{Poi}}(25)$ ({rf_label})",
     )
 
     from code.marginal.export_paper_tables_mean_width import main as _export_tables
 
-    _export_tables()
+    # export_paper_tables_mean_width.main() parses argv; strip suite flags from plot_paper.
+    _argv = sys.argv
+    sys.argv = [_argv[0]]
+    try:
+        _export_tables()
+    finally:
+        sys.argv = _argv
     tables = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "tables" / "simulations_mean_width_tables.tex"
     if tables.exists():
         outputs.append(tables)
@@ -229,6 +235,7 @@ def _build_acs() -> list[Path]:
     spec = importlib.util.spec_from_file_location("acs_plot", acs_plot)
     acs = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = acs
     spec.loader.exec_module(acs)
     return acs.run_suite(acs.RF_YOEP_FB_MIN21_SUITE)
 
@@ -238,6 +245,7 @@ def _build_acs_xgboost() -> list[Path]:
     spec = importlib.util.spec_from_file_location("acs_xgb_plot", acs_plot)
     acs = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = acs
     spec.loader.exec_module(acs)
     acs.RESULTS_ROOT = RESULTS_ACS_MARGINAL
     acs.DING_XGB_SUITE = acs.AcsPlotSuite(

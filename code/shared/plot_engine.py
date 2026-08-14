@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -31,13 +32,15 @@ plt.rcParams.update(
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
-RESULTS_ROOT = REPO_ROOT / "results_marginal" / "dgp"
-PAPER_PARENT = REPO_ROOT / "plots_marginal"
+from code.paths import PLOTS_MARGINAL, RESULTS_DGP_MARGINAL  # noqa: E402
+
+RESULTS_ROOT = RESULTS_DGP_MARGINAL
+PAPER_PARENT = PLOTS_MARGINAL
 PAPER_ROOT = PAPER_PARENT / "dgp_true_marginal_rf"
 FIG_DIR = PAPER_ROOT / "figures"
 SUMMARY_DIR = PAPER_ROOT / "summaries"
 
-POISSON_DATASET = "poissonNmean21"
+POISSON_DATASET = os.environ.get("HCP_POISSON_DATASET", "poissonNmean25")
 FIXED_DATASET = "fixedN21"
 O_VALUES = [0, 5, 10, 15, 20]
 O_VALUES_UPTO35 = [0, 5, 10, 15, 20, 25, 30, 35]
@@ -510,6 +513,29 @@ def _finite_width_array(series: pd.Series) -> np.ndarray:
     return series.replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
 
 
+def _all_finite_width_array(series: pd.Series) -> np.ndarray:
+    """Return widths only if every replicate is finite; else empty (skip plot)."""
+    arr = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    if arr.size == 0 or not np.isfinite(arr).all():
+        return np.asarray([], dtype=float)
+    return arr
+
+
+def _o_values_with_all_finite_widths(
+    trials: pd.DataFrame,
+    *,
+    method: str,
+    o_values: list[int],
+    width_col: str = "width",
+) -> list[int]:
+    keep: list[int] = []
+    for o in o_values:
+        vals = trials[(trials["method"] == method) & (trials["o"] == int(o))][width_col]
+        if len(_all_finite_width_array(vals)):
+            keep.append(int(o))
+    return keep
+
+
 def _managed_width_upper(values: list[float] | np.ndarray) -> float | None:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
@@ -768,18 +794,27 @@ def plot_alpha_o_axis_panel(
         alpha_band=0.10,
     )
     if include_stdcp and not stdcp.empty:
-        stdcp_style = _method_style("Std-CP")
-        _plot_coverage_line_with_band(
-            ax_cov,
-            stdcp["o"].to_numpy(dtype=float),
-            stdcp["coverage_mean"].to_numpy(dtype=float),
-            stdcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
-            stdcp_style["color"],
-            label="Std-CP",
-            marker=stdcp_style["marker"],
-            linestyle=stdcp_style["linestyle"],
-            alpha_band=0.10,
-        )
+        std_o_keep = []
+        for o in o_values:
+            vals = _finite_width_array(
+                d_alpha[(d_alpha["method"] == "Std-CP") & (d_alpha["o"] == int(o))]["width"]
+            )
+            if len(vals):
+                std_o_keep.append(int(o))
+        stdcp_plot = stdcp[stdcp["o"].isin(std_o_keep)].sort_values("o")
+        if not stdcp_plot.empty:
+            stdcp_style = _method_style("Std-CP")
+            _plot_coverage_line_with_band(
+                ax_cov,
+                stdcp_plot["o"].to_numpy(dtype=float),
+                stdcp_plot["coverage_mean"].to_numpy(dtype=float),
+                stdcp_plot["coverage_se"].fillna(0.0).to_numpy(dtype=float),
+                stdcp_style["color"],
+                label="Std-CP",
+                marker=stdcp_style["marker"],
+                linestyle=stdcp_style["linestyle"],
+                alpha_band=0.10,
+            )
     hcp_cov = float(hcp["coverage_mean"].iloc[0])
     hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
     hcp_x = np.asarray(o_values, dtype=float)
@@ -822,7 +857,9 @@ def plot_alpha_o_axis_panel(
                 boxprops=_accessible_boxprops(METHOD_COLORS["GHCP"], alpha=0.68),
             )
         if include_stdcp:
-            vals_std = _finite_width_array(d_alpha[(d_alpha["method"] == "Std-CP") & (d_alpha["o"] == o)]["width"])
+            vals_std = _finite_width_array(
+                d_alpha[(d_alpha["method"] == "Std-CP") & (d_alpha["o"] == o)]["width"]
+            )
             if len(vals_std):
                 width_box_groups.append(vals_std)
                 ax_width.boxplot(

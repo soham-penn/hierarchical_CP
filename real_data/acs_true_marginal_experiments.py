@@ -1765,7 +1765,7 @@ if __name__ == '__main__':
                 pct = 100 * (1 - w_d / w_p) if w_d < w_p else -100 * (w_d / w_p - 1)
                 cmp_word = "narrower" if w_d < w_p else "wider"
                 print(
-                    f"\n  Width: D-HCP median @ o=20 = ${w_d:,.0f}; "
+                    f"\n  Width: GHCP median @ o=20 = ${w_d:,.0f}; "
                     f"global pooled = ${w_p:,.0f} ({abs(pct):.1f}% {cmp_word})"
                 )
 

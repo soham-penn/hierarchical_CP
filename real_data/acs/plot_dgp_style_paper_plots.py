@@ -27,13 +27,15 @@ REPO_ROOT = REAL_DATA_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from code.paths import PLOTS_MARGINAL, RESULTS_ACS_MARGINAL  # noqa: E402
+
 _pm_path = REPO_ROOT / "code" / "shared" / "plot_engine.py"
 _pm_spec = importlib.util.spec_from_file_location("plot_true_marginal_alpha_grid", _pm_path)
 pm = importlib.util.module_from_spec(_pm_spec)
 assert _pm_spec.loader is not None
 _pm_spec.loader.exec_module(pm)
-RESULTS_ROOT = REPO_ROOT / "results_marginal" / "acs"
-PAPER_ROOT = REPO_ROOT / "plots_marginal" / "acs"
+RESULTS_ROOT = RESULTS_ACS_MARGINAL
+PAPER_ROOT = PLOTS_MARGINAL / "acs"
 
 PERMUTED_PREFIX = "true_marginal_permuted_alpha"
 PERMUTED_OLS_PREFIX = "true_marginal_permuted_ols_trim2_corr_alpha"
@@ -740,6 +742,10 @@ def _finite_width_array(series: pd.Series) -> np.ndarray:
     return series.replace([np.inf, -np.inf], np.nan).dropna().to_numpy(dtype=float)
 
 
+def _all_finite_width_array(series: pd.Series) -> np.ndarray:
+    return pm._all_finite_width_array(series)
+
+
 def _managed_width_upper(
     values: list[float] | np.ndarray,
     quantile: float = WIDTH_AXIS_QUANTILE,
@@ -992,17 +998,27 @@ def plot_alpha_o_axis_panel(
         alpha_band=0.10,
     )
     if include_stdcp and not stdcp.empty:
-        _plot_coverage_line_with_band(
-            ax_cov,
-            np.asarray([xpos[int(o)] for o in stdcp["o"]], dtype=float),
-            stdcp["coverage_mean"].to_numpy(dtype=float),
-            stdcp["coverage_se"].fillna(0.0).to_numpy(dtype=float),
-            METHOD_COLORS["Std-CP"],
-            label="Std-CP",
-            marker=METHOD_MARKERS["Std-CP"],
-            linestyle=METHOD_LINESTYLES["Std-CP"],
-            alpha_band=0.10,
-        )
+        # Skip o with no finite widths (e.g. o=0); keep o with any finite (e.g. o=5 at α=0.2).
+        std_o_keep = []
+        for o in o_values:
+            vals = _finite_width_array(
+                d_trials[(d_trials["method"] == "Std-CP") & (d_trials["o"] == int(o))]["plot_width"]
+            )
+            if len(vals):
+                std_o_keep.append(int(o))
+        stdcp_plot = stdcp[stdcp["o"].isin(std_o_keep)].sort_values("o")
+        if not stdcp_plot.empty:
+            _plot_coverage_line_with_band(
+                ax_cov,
+                np.asarray([xpos[int(o)] for o in stdcp_plot["o"]], dtype=float),
+                stdcp_plot["coverage_mean"].to_numpy(dtype=float),
+                stdcp_plot["coverage_se"].fillna(0.0).to_numpy(dtype=float),
+                METHOD_COLORS["Std-CP"],
+                label="Std-CP",
+                marker=METHOD_MARKERS["Std-CP"],
+                linestyle=METHOD_LINESTYLES["Std-CP"],
+                alpha_band=0.10,
+            )
     if not hcp.empty:
         hcp_cov = float(hcp["coverage_mean"].iloc[0])
         hcp_cov_se = float(hcp["coverage_se"].fillna(0.0).iloc[0])
@@ -1025,9 +1041,10 @@ def plot_alpha_o_axis_panel(
     ax_cov.set_title("Coverage", fontsize=FONT_TITLE, pad=12)
 
     width_box_groups: list[np.ndarray] = []
-    dhcp_dx = -0.28 if include_stdcp else 0.0
-    stdcp_dx = 0.28
-    box_w = BOX_WIDTH_O_AXIS * (0.62 if include_stdcp else 1.0)
+    # Keep GHCP/Std-CP boxes visually separate (centers ±dx; widths < 2*dx).
+    dhcp_dx = -0.62 if include_stdcp else 0.0
+    stdcp_dx = 0.62
+    box_w = BOX_WIDTH_O_AXIS * (0.55 if include_stdcp else 1.0)
     for o in o_values:
         vals = _finite_width_array(d_trials[(d_trials["method"] == "GHCP") & (d_trials["o"] == o)]["plot_width"])
         if len(vals):

@@ -43,7 +43,11 @@ def gamma_tag(gamma: float) -> str:
 
 
 def draw_group_latent_intercept(u_vec, n_obs, b_j, rho):
-    """Draw group data with response shift B_j on the last coordinate."""
+    """Draw group data with response shift B_j on the last coordinate.
+
+    Each observation dict includes ``B`` (the group latent intercept) so oracle
+    predictors that know \(B\) can recover \(E[Y\\mid X,U,B]\).
+    """
     u = np.asarray(u_vec, dtype=float).ravel()
     d = len(u)
     mean = u ** 2
@@ -53,7 +57,11 @@ def draw_group_latent_intercept(u_vec, n_obs, b_j, rho):
     sigma = 0.5 * (sigma + sigma.T)
     sigma += 1e-8 * np.eye(d)
     z = np.random.multivariate_normal(mean=mean, cov=sigma, size=int(n_obs))
-    return [{"X": z[i, :-1].astype(float), "Y": float(z[i, -1])} for i in range(int(n_obs))]
+    b = float(b_j)
+    return [
+        {"X": z[i, :-1].astype(float), "Y": float(z[i, -1]), "B": b}
+        for i in range(int(n_obs))
+    ]
 
 
 def split_counts(total: int, n_workers: int) -> list[int]:
@@ -113,10 +121,39 @@ def patch_fixed_size_generators(fixed_n, target_n, dimension, u_min, u_max, rho,
     exp_mod.generate_test_group = generate_test_group_fixed
 
 
-def patch_poisson_generators(lambda_poisson, dimension, u_min, u_max, rho, gamma, min_target_n):
+def patch_poisson_generators(
+    lambda_poisson,
+    dimension,
+    u_min,
+    u_max,
+    rho,
+    gamma,
+    min_target_n,
+    size_offset=1,
+):
+    """Patch DGP generators to use N = size_offset + Poisson(lambda_poisson).
+
+    ``size_offset=1`` is the legacy 1+Poi(λ) law (mean λ+1).
+    ``size_offset=0`` is pure Poi(λ); draws of 0 are rejected (resample).
+    """
+    size_offset = int(size_offset)
+    if size_offset < 0:
+        raise ValueError(f"size_offset must be >= 0, got {size_offset}")
+
+    def _draw_n(size=None):
+        if size is None:
+            while True:
+                n = size_offset + int(np.random.poisson(lam=lambda_poisson))
+                if n >= 1:
+                    return n
+        out = np.empty(int(size), dtype=int)
+        for i in range(int(size)):
+            out[i] = _draw_n()
+        return out
+
     def generate_calibration_data_poisson(number_groups, lambda_Poisson, dgp_specification):
         u_cal = np.random.uniform(low=u_min, high=u_max, size=(number_groups, dimension))
-        n_vec = 1 + np.random.poisson(lam=lambda_poisson, size=number_groups)
+        n_vec = _draw_n(size=number_groups)
         z_cal = []
         for j in range(number_groups):
             b_j = np.random.normal(loc=0.0, scale=gamma)
@@ -132,9 +169,9 @@ def patch_poisson_generators(lambda_poisson, dimension, u_min, u_max, rho, gamma
             u_test = np.asarray(fixed_U, dtype=float).reshape(1, -1)
         else:
             u_test = np.random.uniform(low=u_min, high=u_max, size=(1, dimension))
-        n_test = 1 + np.random.poisson(lam=lambda_poisson)
+        n_test = _draw_n()
         while n_test < min_target_n or n_test <= o_observed:
-            n_test = 1 + np.random.poisson(lam=lambda_poisson)
+            n_test = _draw_n()
         b_test = np.random.normal(loc=0.0, scale=gamma)
         z_test = draw_group_latent_intercept(u_test[0, :], int(n_test), b_test, rho)
         return {"U_test": u_test, "Z_test": z_test, "N_test": int(n_test)}
@@ -169,6 +206,7 @@ def run_chunk(worker_id, number_experiments_chunk, experiment_offset, config):
             rho=rho,
             gamma=gamma,
             min_target_n=min_target_n,
+            size_offset=int(config.get("size_offset", 1)),
         )
     else:
         raise ValueError(f"Unknown generation_mode: {config.get('generation_mode')}")
@@ -287,6 +325,13 @@ def build_configs(
             **common,
             "generation_mode": "poisson",
             "lambda_poisson": 20,
+            "size_offset": 1,  # N = 1 + Poi(20), mean 21
+        },
+        "poissonNmean25": {
+            **common,
+            "generation_mode": "poisson",
+            "lambda_poisson": 25,
+            "size_offset": 0,  # N = Poi(25)
         },
     }
 
@@ -296,7 +341,7 @@ def parse_args():
         description="True-marginal latent-intercept DGP experiments (gamma configurable)."
     )
     parser.add_argument("--alphas", type=str, default=PAPER_ALPHA_GRID_STR)
-    parser.add_argument("--configs", type=str, default="fixedN21,poissonNmean21")
+    parser.add_argument("--configs", type=str, default="fixedN21,poissonNmean25")
     parser.add_argument("--total_replicates", type=int, default=1000)
     parser.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     parser.add_argument("--n_workers", type=int, default=N_WORKERS)

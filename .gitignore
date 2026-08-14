@@ -88,7 +88,8 @@ real_data/acs/data/acs_data.csv
 real_data/acs/data/2018/1-Year/psam_p*.csv
 
 # ACS archive (local only; too large for git)
-plots_marginal/acs/old/
+old/plots_marginal/acs/old/
+paper-results/acs/**/old/
 
 # Replicate caches
 **/caches/
@@ -99,4 +100,19 @@ plots_marginal/acs/old/
 **/acs_trials_long.csv
 
 # PNG previews (PDFs are kept)
-plots_marginal/acs/**/*.png
+old/plots_marginal/acs/**/*.png
+paper-results/acs/**/*.png
+
+# Local scratch and large archives (regenerate locally; do not commit)
+new_plots_marginal/
+old/plots_marginal/
+old/new_poisson_marginal_scratch/
+old/.mplconfig/
+paper-results/.mplconfig/
+old/dgp_true_marginal_rf_capture_data/
+old/dgp_true_marginal_rf_median_era/
+old/diagnostics/
+old/plots_conditional/
+old/plots_marginal_archives/
+old/results_conditional/
+/results_marginal/

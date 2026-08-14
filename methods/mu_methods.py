@@ -17,14 +17,14 @@ The shrinkage prediction for observation (x, u) in group j is
 
   mu_hat(x, u | group j) = w_g * mu_global(x, u)  +  (1 - w_g) * mu_bar_j
 
-where
+where (manuscript Eq. (4) with λ = tau / (|Strain| + tau))
 
   w_g = |S_comp|^c / (|S_comp|^c + tau)
 
 and
-  tau      : number of within-group training obs (also controls shrinkage strength)
-  c        : exponent; default 0.5 (sqrt rule)
-  |S_comp| : number of groups used to fit the global model
+  tau      : number of within-group training obs (= floor(o/2) in GHCP)
+  c        : exponent; default 1.0 matches Eq. (4)  (c=0.5 is the legacy sqrt rule)
+  |S_comp| : number of groups used to fit the global model (= |Strain|)
 
 When tau = 0 → pure global (no within-group history used).
 When |S_comp| → ∞ → pure global (many groups → trust global more).
@@ -90,6 +90,94 @@ def global_weight(N_comp_groups, tau, c):
     return numer / (numer + float(tau))
 
 
+def estimate_re_variance_components(
+    U_matrix,
+    Z_list,
+    group_index_vector,
+    mu_method,
+    global_model,
+    *,
+    ntree=50,
+    nodesize=5,
+    random_state=123,
+    rho=0.5,
+):
+    """
+    Classical one-way MoM estimators of σ² (within) and τ_B² (between).
+
+    Uses residuals from the *already fitted* global predictor:
+
+        e_{ji} = Y_{ji} - μ̂(X_{ji}, U_j)
+
+    ``group_index_vector`` should be groups that were *not* used to train
+    ``global_model`` (e.g. S_η / S_tilde in GHCP). Then μ̂ is out-of-sample for
+    those groups and no LOGO is needed.
+
+        σ̂² = pooled within-group variance of e
+        τ̂_B² = max(0, s²_{between} - σ̂² / n̄_h)
+    """
+    groups = [int(j) for j in group_index_vector if len(Z_list[int(j)]) > 0]
+    if len(groups) == 0:
+        return 1.0, 0.0
+    if global_model is None or mu_method is None:
+        return 1.0, 0.0
+
+    predict_global = mu_method["predict_global"]
+    group_means = []
+    ns = []
+    within_ss = 0.0
+    within_df = 0
+    for g in groups:
+        Zg = Z_list[g]
+        n = len(Zg)
+        if n <= 0:
+            continue
+        Uj = U_matrix[g, :]
+        resid = np.empty(n, dtype=float)
+        for i, z in enumerate(Zg):
+            mu_hat = float(predict_global(
+                model_global=global_model,
+                x_vector=z["X"],
+                u_vector=Uj,
+            ))
+            resid[i] = float(z["Y"]) - mu_hat
+        group_means.append(float(np.mean(resid)))
+        ns.append(n)
+        if n > 1:
+            within_ss += float(np.sum((resid - resid.mean()) ** 2))
+            within_df += n - 1
+
+    if within_df > 0:
+        sigma2 = within_ss / within_df
+    else:
+        sigma2 = float(np.var(group_means, ddof=0)) if group_means else 1.0
+    sigma2 = float(max(sigma2, 1e-12))
+
+    if len(group_means) >= 2:
+        s2_between = float(np.var(group_means, ddof=1))
+        n_harm = len(ns) / sum(1.0 / n for n in ns)
+        tau_B2 = float(max(s2_between - sigma2 / n_harm, 0.0))
+    else:
+        tau_B2 = 0.0
+    return sigma2, tau_B2
+
+
+def bayes_re_global_weight(sigma2, tau_B2, n_local):
+    """
+    Random-effects / empirical-Bayes weight on the global predictor:
+
+        w_g = (σ²/n) / (τ_B² + σ²/n)
+
+    with n = n_local (= τ = floor(o/2) in GHCP). n_local <= 0 → pure global.
+    """
+    n = int(n_local)
+    if n <= 0:
+        return 1.0
+    sigma2 = float(max(sigma2, 1e-12))
+    tau_B2 = float(max(tau_B2, 0.0))
+    return float((sigma2 / n) / (tau_B2 + sigma2 / n))
+
+
 def resolve_shrinkage_weight(mu_method, global_model, group_adjustment) -> float:
     """w_g for μ/σ blend; honors mu_method['w_g_override'] (e.g. 0 = pure local)."""
     if isinstance(group_adjustment, dict) and group_adjustment.get("w_g_override") is not None:
@@ -108,7 +196,7 @@ def resolve_shrinkage_weight(mu_method, global_model, group_adjustment) -> float
     N_comp = 0
     if global_model is not None:
         N_comp = int(getattr(global_model, "_n_comp_groups", 0))
-    c = float((mu_method or {}).get("c", 0.5))
+    c = float((mu_method or {}).get("c", 1.0))
     return float(global_weight(N_comp, tau_eff, c))
 
 
@@ -250,7 +338,7 @@ def _make_method(fit_fn, tau, c):
 # ---------------------------------------------------------------------------
 
 def create_mu_method_random_forest(ntree=50, mtry=None, nodesize=5,
-                                    random_state=123, tau=0, c=0.5):
+                                    random_state=123, tau=0, c=1.0):
     """
     Create a mu-estimation method using a global Random Forest with optional
     within-group shrinkage.
@@ -311,7 +399,7 @@ def create_mu_method_random_forest(ntree=50, mtry=None, nodesize=5,
 # ---------------------------------------------------------------------------
 
 def create_mu_method_random_forest_offset(ntree=50, mtry=None, nodesize=5,
-                                           random_state=123, tau=0, c=0.5):
+                                           random_state=123, tau=0, c=1.0):
     """RF with optional within-group shrinkage (tau controls history depth)."""
     return create_mu_method_random_forest(
         ntree=ntree, mtry=mtry, nodesize=nodesize,
@@ -390,7 +478,7 @@ def create_mu_method_random_forest_local_rf_offset(
     mtry=None,
     nodesize=5,
     random_state=123,
-    c=0.5,
+    c=1.0,
     local_ntree=None,
     local_nodesize=None,
     local_mtry="sqrt",
@@ -555,7 +643,7 @@ def attach_stdcp_local_predictor(mu_method: dict, *, Z_test_list, local_rf, loca
 # OLS methods (real-data bootstrap)
 # ---------------------------------------------------------------------------
 
-def create_mu_method_ols(tau=0, c=0.5):
+def create_mu_method_ols(tau=0, c=1.0):
     """OLS with optional within-group shrinkage."""
 
     def fit_global(U_matrix, Z_list, group_index_vector):
@@ -582,7 +670,7 @@ def create_mu_method_ols(tau=0, c=0.5):
     return _make_method(fit_global, tau, c)
 
 
-def create_mu_method_ols_offset(tau=0, c=0.5):
+def create_mu_method_ols_offset(tau=0, c=1.0):
     """OLS with within-group shrinkage."""
     return create_mu_method_ols(tau=tau, c=c)
 
@@ -694,6 +782,70 @@ def create_mu_method_bayes_joint_xy_offset(rho: float = 0.5, tau: float = 0, c: 
 
 def create_mu_method_bayes_joint_xy_global_only(rho: float = 0.5):
     return create_mu_method_bayes_joint_xy(rho=rho, tau=0, c=0.5)
+
+
+def create_mu_method_oracle_yxub(rho: float = 0.5):
+    """
+    Full oracle center E[Y | X, U, B] = m(u,x) + B for the joint-XY DGP.
+
+    No within-group merging: the latent intercept is treated as known.
+    Call ``register_oracle_group_B`` (or set ``_b_by_u``) before predicting so
+    each group's U maps to its B.
+    """
+    b_by_u: dict[tuple, float] = {}
+    base_model = _BayesJointXYModel(rho=rho, n_comp_groups=0)
+
+    def fit_global(U_matrix, Z_list, group_index_vector):
+        # Stateless closed form; only record |Strain| for API compatibility.
+        n_comp = len(group_index_vector)
+        return _BayesJointXYModel(rho=rho, n_comp_groups=n_comp)
+
+    def predict_global(model_global, x_vector, u_vector):
+        u = np.asarray(u_vector, dtype=float).ravel()
+        key = tuple(u.tolist())
+        if key not in b_by_u:
+            raise KeyError(
+                "oracle_yxub: B not registered for this U; "
+                "call register_oracle_group_B before GHCP."
+            )
+        mu_xu = float(_predict_batch(model_global or base_model, np.asarray(x_vector, dtype=float).reshape(1, -1), u)[0])
+        return mu_xu + float(b_by_u[key])
+
+    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
+        return 0.0
+
+    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
+        return predict_global(model_global, x_vector, u_group_vector)
+
+    return {
+        "fit_global": fit_global,
+        "predict_global": predict_global,
+        "fit_group_adjustment": fit_group_adjustment,
+        "predict_group_mu": predict_group_mu,
+        "c": 1.0,
+        "tau": 0,
+        "merger": "none",
+        "oracle_yxub": True,
+        "_b_by_u": b_by_u,
+    }
+
+
+def register_oracle_group_B(mu_method, U_matrix, Z_list, group_index_vector=None):
+    """Map each group's U -> B for ``create_mu_method_oracle_yxub``."""
+    reg = mu_method.get("_b_by_u")
+    if reg is None:
+        raise ValueError("mu_method has no _b_by_u registry")
+    if group_index_vector is None:
+        group_index_vector = range(len(Z_list))
+    for j in group_index_vector:
+        Zj = Z_list[int(j)]
+        if not Zj:
+            continue
+        if "B" not in Zj[0]:
+            raise KeyError("observations must carry key 'B' for oracle_yxub")
+        key = tuple(np.asarray(U_matrix[int(j)], dtype=float).ravel().tolist())
+        reg[key] = float(Zj[0]["B"])
+    return mu_method
 
 
 def create_mu_method_ols_residual_correction(

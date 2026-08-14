@@ -12,7 +12,13 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 from scores import conformal_threshold, merge_quantile_info
-from methods.mu_methods import global_weight, resolve_shrinkage_weight
+from methods.mu_methods import (
+    global_weight,
+    resolve_shrinkage_weight,
+    estimate_re_variance_components,
+    bayes_re_global_weight,
+    set_w_g_override,
+)
 from methods.nonconformity import (
     conformity_score,
     fit_score_aux,
@@ -91,19 +97,17 @@ def _select_s_tilde_with_tie_randomization(
     rng=None,
 ):
     """
-    Select S_tilde with tie-aware randomization at the alpha cutoff.
+    Select S_tilde (= S_η) with tie-aware randomization at the α_selection cutoff.
 
-    Target size (when all groups have N > o):
-      n0 = ceil((1 - alpha_selection) * K)
+    Target size when all groups have N > o, with n0 = ceil((1 - η) K):
       |S_tilde| = n0           without donor slot  (baseline HCP)
-      |S_tilde| = n0 + 1       with donor slot     (GHCP)
+      |S_tilde| = n0 + 1       with donor slot     (GHCP experimental rule)
 
-    With the donor slot, one group is later removed as the donor, so the
-    conformal measure has
-      retained calib groups = n0,
-      S_size = n0 + 1  (retained + test),
-      infinity mass = 1 / (n0 + 1)
-    matching the equal-N DGP case (K=20, η=0.5 → 10 retained, mass 1/11).
+    The manuscript Eq. (9) uses |S_η| = q_η = n0.  Empirically we keep the
+    GHCP donor-slot rule so that after removing J0 one still has
+    |Scal| = n0 retained calibration groups (matching HCP's calib size), rather
+    than |Scal| = n0 - 1.  Global training still follows Algorithm 1:
+    Strain = [K] \\ S_η (donor never enters Strain).
 
     Selection prefers smaller groups (interior below the V_o cutoff, then the
     V_o boundary with tie-breaking). If that is still short of n_target — which
@@ -219,24 +223,10 @@ def get_hcp_train_cal_split(sample_sizes, o_observed, alpha_selection):
 
 def get_donor_style_train_cal_split(sample_sizes, o_observed, alpha_selection):
     """
-    Build train/calibration group indices using donor-HCP selection logic.
+    Build train/calibration group indices matching Algorithm 1.
 
-    This returns the split induced by tie-aware S_tilde selection and donor
-    removal for donor-HCP methods.
-
-    Parameters
-    ----------
-    sample_sizes : array-like
-        Sample sizes for each group
-    o_observed : int
-        Number of observed test-group observations
-    alpha_selection : float
-        Selection parameter
-
-    Returns
-    -------
-    train_idx, calib_idx : lists
-        Training and calibration group indices (after donor removal)
+    Strain = [K] \\ S_η (excludes the entire restricted pool, including the
+    eventual donor). Scal = S_η \\ {J0}. The donor index is in neither set.
     """
     N = np.asarray(sample_sizes, dtype=int)
     K = len(N)
@@ -257,7 +247,8 @@ def get_donor_style_train_cal_split(sample_sizes, o_observed, alpha_selection):
     rng = np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
     donor = int(rng.choice(S_tilde))
     calib_idx = np.setdiff1d(S_tilde, [donor]).astype(int)
-    train_idx = np.setdiff1d(np.arange(K, dtype=int), calib_idx).astype(int)
+    # Algorithm 1: Strain = [K] \ S_η (donor stays in S_η, never trained on).
+    train_idx = np.setdiff1d(np.arange(K, dtype=int), S_tilde).astype(int)
 
     return train_idx.tolist(), calib_idx.tolist()
 
@@ -302,8 +293,24 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                                                 quantile_random_seed=None,
                                                 quantile_rng=None,
                                                 return_quantile_info=False,
-                                                return_intermediates=False):
-    """Randomized donor-HCP interval implementation (formerly in hcp_plus.py)."""
+                                                return_intermediates=False,
+                                                alphas=None):
+    """Randomized donor-HCP interval implementation (formerly in hcp_plus.py).
+
+    If ``alphas`` is a non-empty list, the global fit and scores are computed
+    once and only the conformal quantile/interval is repeated per α. The return
+    value then includes ``by_alpha`` mapping each α to an interval dict.
+    """
+    alpha_list = [float(a) for a in alphas] if alphas is not None else None
+    if alpha_list is not None and len(alpha_list) == 0:
+        raise ValueError("alphas must be non-empty when provided")
+    if alpha_list is None:
+        alpha_list_eff = [float(alpha)]
+    else:
+        alpha_list_eff = alpha_list
+    # Use first α for any aux fits that still take a single alpha (absolute scores ignore it).
+    alpha = float(alpha_list_eff[0]) if alpha_list is not None else float(alpha)
+
     K = len(Z_calibration)
     N = np.array([len(Z_calibration[j]) for j in range(K)])
     test_idx = K
@@ -423,12 +430,15 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
     if N_test < max(o_observed + 1, test_index_target + 1):
         raise ValueError("compute_donor_hcp_randomized_interval: Z_test must have at least max(o+1, target+1) observations.")
 
+    # Experimental |S_η|=q_η+1 (donor slot); Strain = [K] \ S_η before donor draw.
     S_tilde = _select_s_tilde_with_tie_randomization(
         N=N,
         o_observed=o_observed,
         alpha_selection=alpha_selection,
         include_donor_slot=True,
     )
+    # Fit global on Strain before / independent of donor choice.
+    S_comp = np.setdiff1d(np.arange(K, dtype=int), S_tilde)
 
     if len(S_tilde) == 0:
         if tau_override is None:
@@ -517,14 +527,6 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
             merge_quantile_info(out, q_info)
         return out
 
-    donor_rng = np.random.default_rng(random_seed) if random_seed is not None else np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
-    donor = donor_rng.choice(S_tilde)
-    N_donor = N[donor]
-
-    S_cal = np.sort(np.setdiff1d(S_tilde, [donor]))
-    S = np.sort(np.concatenate([S_cal, [test_idx]]))
-    S_size = len(S)
-
     if tau_override is None:
         tau = int(np.floor(o_observed / 2))
         if tau < 0:
@@ -535,25 +537,71 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
         tau = int(tau_override)
         tau = max(0, min(tau, max(0, o_observed - 1)))
 
-    S_comp = np.setdiff1d(list(range(K + 1)), S)
     if len(S_comp) == 0:
         global_model = None
         scale_model = None
     else:
+        # Train only on reference groups outside S_η (never on donor or test).
         global_model = mu_method['fit_global'](
-            U_matrix=U_all,
-            Z_list=Z_all,
+            U_matrix=U_calibration,
+            Z_list=Z_calibration,
             group_index_vector=list(S_comp),
         )
         scale_model = _fit_global_scale_model(
-            U_all=U_all,
-            Z_all=Z_all,
+            U_all=U_calibration,
+            Z_all=Z_calibration,
             group_index_vector=list(S_comp),
             mu_method=mu_method,
             global_model=global_model,
             alpha=alpha,
             tau=tau,
         )
+
+    donor_rng = np.random.default_rng(random_seed) if random_seed is not None else np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
+    donor = donor_rng.choice(S_tilde)
+    N_donor = N[donor]
+
+    S_cal = np.sort(np.setdiff1d(S_tilde, [donor]))
+    S = np.sort(np.concatenate([S_cal, [test_idx]]))
+    S_size = len(S)
+
+    # RE merger: MoM (σ², τ_B²) from RF residuals on S_cal (held out of Strain).
+    mu_work = mu_method
+    merger = str(mu_method.get("merger", "") or "").lower().replace("-", "_")
+    bayes_info = None
+    clear_bayes_override = False
+    if merger in ("bayes_re", "bayes", "re"):
+        if global_model is not None and tau > 0 and len(S_cal) > 0:
+            sigma2, tau_B2 = estimate_re_variance_components(
+                U_matrix=U_calibration,
+                Z_list=Z_calibration,
+                group_index_vector=list(S_cal),
+                mu_method=mu_method,
+                global_model=global_model,
+            )
+            w_bayes = bayes_re_global_weight(sigma2, tau_B2, tau)
+            bayes_info = {
+                "sigma2": sigma2,
+                "tau_B2": tau_B2,
+                "w_g": w_bayes,
+                "w_local": float(1.0 - w_bayes),
+                "tau": int(tau),
+                "n_cal_groups": int(len(S_cal)),
+                "n_train_groups": int(len(S_comp)),
+            }
+        else:
+            w_bayes = 1.0
+            bayes_info = {
+                "sigma2": None,
+                "tau_B2": None,
+                "w_g": 1.0,
+                "w_local": 0.0,
+                "tau": int(tau),
+                "n_cal_groups": int(len(S_cal)),
+                "n_train_groups": int(len(S_comp)),
+            }
+        mu_work = set_w_g_override(mu_method, w_bayes)
+        clear_bayes_override = True
 
     scores = []
     weights = []
@@ -567,7 +615,7 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
 
         if tau > 0:
             train_idx = list(range(tau))
-            offset_j = mu_method['fit_group_adjustment'](
+            offset_j = mu_work['fit_group_adjustment'](
                 model_global=global_model,
                 u_group_vector=U_calibration[j, :],
                 Z_group_list=Z_calibration[j],
@@ -580,14 +628,14 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
         w_j = 1.0 / (S_size * len(idx_tail)) if len(idx_tail) > 0 else 0.0
         for i in idx_tail:
             z = Z_calibration[j][i]
-            mu = mu_method['predict_group_mu'](
+            mu = mu_work['predict_group_mu'](
                 model_global=global_model,
                 group_adjustment=offset_j,
                 x_vector=z['X'],
                 u_group_vector=U_calibration[j, :],
             )
-            mu_g = _mu_global_only(mu_method, global_model, z['X'], U_calibration[j, :])
-            w_g = _shrinkage_weight(mu_method, global_model, offset_j)
+            mu_g = _mu_global_only(mu_work, global_model, z['X'], U_calibration[j, :])
+            w_g = _shrinkage_weight(mu_work, global_model, offset_j)
             scores.append(conformity_score(
                 z['Y'], mu, z['X'], U_calibration[j, :], scale_model, mu_global=mu_g, w_g=w_g,
             ))
@@ -602,7 +650,7 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
 
     if tau > 0:
         train_idx_test = list(range(tau))
-        offset_test = mu_method['fit_group_adjustment'](
+        offset_test = mu_work['fit_group_adjustment'](
             model_global=global_model,
             u_group_vector=U_test[0, :],
             Z_group_list=Z_test,
@@ -613,21 +661,20 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
 
     idx_tail_test = list(range(tau, o_observed)) if o_observed > tau else []
     test_scores = []
-    w_g_test = _shrinkage_weight(mu_method, global_model, offset_test)
+    w_g_test = _shrinkage_weight(mu_work, global_model, offset_test)
     for i in idx_tail_test:
         z = Z_test[i]
-        mu = mu_method['predict_group_mu'](
+        mu = mu_work['predict_group_mu'](
             model_global=global_model,
             group_adjustment=offset_test,
             x_vector=z['X'],
             u_group_vector=U_test[0, :],
         )
-        mu_g = _mu_global_only(mu_method, global_model, z['X'], U_test[0, :])
+        mu_g = _mu_global_only(mu_work, global_model, z['X'], U_test[0, :])
         test_scores.append(conformity_score(
             z['Y'], mu, z['X'], U_test[0, :], scale_model, mu_global=mu_g, w_g=w_g_test,
         ))
         if scores_meta is not None:
-            # weight filled after n_total_test is known
             scores_meta.append({
                 "_pending_test": True,
                 "y": float(z['Y']),
@@ -664,39 +711,57 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                 ))
 
     if len(scores) == 0 or all(w <= 0 for w in weights):
-        q = np.inf
-        q_info = None
+        qs_by_alpha = {a: (np.inf, None) for a in alpha_list_eff}
+        q, q_info = np.inf, None
     else:
-        q_info = _select_conformal_q(
-            scores, weights, alpha,
-            quantile_mode=quantile_mode,
-            quantile_random_seed=quantile_random_seed,
-            quantile_rng=quantile_rng,
-            return_quantile_info=True,
-        )
-        q = q_info["q_randomized"]
+        qs_by_alpha = {}
+        for a in alpha_list_eff:
+            q_info_a = _select_conformal_q(
+                scores, weights, a,
+                quantile_mode=quantile_mode,
+                quantile_random_seed=quantile_random_seed,
+                quantile_rng=quantile_rng,
+                return_quantile_info=True,
+            )
+            qs_by_alpha[a] = (q_info_a["q_randomized"], q_info_a)
+        q, q_info = qs_by_alpha[alpha_list_eff[0]]
 
     X_target = Z_test[test_index_target]['X']
-    mu_center = mu_method['predict_group_mu'](
+    mu_center = mu_work['predict_group_mu'](
         model_global=global_model,
         group_adjustment=offset_test,
         x_vector=X_target,
         u_group_vector=U_test[0, :],
     )
-    mu_g_target = _mu_global_only(mu_method, global_model, X_target, U_test[0, :])
-    interval = interval_from_threshold(
-        q, mu_center, X_target, U_test[0, :], scale_model,
-        mu_global=mu_g_target, w_g=w_g_test,
-    )
+    mu_g_target = _mu_global_only(mu_work, global_model, X_target, U_test[0, :])
 
-    out = {
-        'interval': interval,
-        'mu_hat': mu_center,
-        'number_selected_groups': S_size,
-        'donor_group_index': int(donor),
-    }
-    if return_quantile_info or quantile_mode == "randomized":
-        merge_quantile_info(out, q_info)
+    def _one_out(q_val, q_info_val):
+        interval = interval_from_threshold(
+            q_val, mu_center, X_target, U_test[0, :], scale_model,
+            mu_global=mu_g_target, w_g=w_g_test,
+        )
+        out_a = {
+            'interval': interval,
+            'mu_hat': mu_center,
+            'number_selected_groups': S_size,
+            'donor_group_index': int(donor),
+        }
+        if return_quantile_info or quantile_mode == "randomized":
+            merge_quantile_info(out_a, q_info_val)
+        return out_a
+
+    if alpha_list is not None:
+        by_alpha = {a: _one_out(qv, qi) for a, (qv, qi) in qs_by_alpha.items()}
+        out = {
+            'by_alpha': by_alpha,
+            'interval': by_alpha[alpha_list_eff[0]]['interval'],
+            'mu_hat': mu_center,
+            'number_selected_groups': S_size,
+            'donor_group_index': int(donor),
+        }
+    else:
+        out = _one_out(q, q_info)
+
     if return_intermediates:
         sig_t = None
         if scale_model is not None:
@@ -720,10 +785,13 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                 'sigma': sig_t,
             },
             's_comp_points': _s_comp_sigma_points(
-                U_all, Z_all, S_comp, mu_method, global_model,
+                U_calibration, Z_calibration, S_comp, mu_work, global_model,
             ),
             'q': float(q) if np.isfinite(q) else np.inf,
+            'bayes_re': bayes_info,
         }
+    if clear_bayes_override:
+        set_w_g_override(mu_method, None)
     return out
 
 
@@ -736,8 +804,13 @@ def compute_donor_hcp_randomized_interval(U_calibration, Z_calibration, U_test, 
                                           quantile_random_seed=None,
                                           quantile_rng=None,
                                           return_quantile_info=False,
-                                          return_intermediates=False):
-    """Randomized donor-HCP interval."""
+                                          return_intermediates=False,
+                                          alphas=None):
+    """Randomized donor-HCP interval.
+
+    Pass ``alphas=[...]`` to reuse one global fit/score pass across miscoverage
+    levels; results are under ``by_alpha``.
+    """
     return _compute_donor_hcp_randomized_interval_impl(
         U_calibration=U_calibration,
         Z_calibration=Z_calibration,
@@ -755,6 +828,7 @@ def compute_donor_hcp_randomized_interval(U_calibration, Z_calibration, U_test, 
         quantile_rng=quantile_rng,
         return_quantile_info=return_quantile_info,
         return_intermediates=return_intermediates,
+        alphas=alphas,
     )
 
 
@@ -814,14 +888,15 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
     Z_all = Z_calibration + [Z_test]
 
     S = np.sort(np.concatenate([S_tilde, [test_idx]]))
-    S_comp = np.setdiff1d(list(range(K + 1)), S)
+    # Algorithm 1: Strain = [K] \ S_η (never train on S_η / donor groups).
+    S_comp = np.setdiff1d(np.arange(K, dtype=int), S_tilde)
 
     if len(S_comp) == 0:
         global_model = None
     else:
         global_model = mu_method['fit_global'](
-            U_matrix=U_all,
-            Z_list=Z_all,
+            U_matrix=U_calibration,
+            Z_list=Z_calibration,
             group_index_vector=list(S_comp)
         )
 

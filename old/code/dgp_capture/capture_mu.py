@@ -1,0 +1,129 @@
+"""Instrument mu_method dicts to log every global RF fit and prediction."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+
+from methods.mu_methods import _predict_batch, global_weight
+
+
+@dataclass
+class CaptureCallContext:
+    experiment: int
+    call_id: str
+    hcp_method: str
+    o: int
+    # Full experiment groups (calib + test). Always score μ_RF on these so apply
+    # can look up any group, even when fit_global only trains on a subset (e.g.
+    # S_tilde empty → fit on calib only, predict on test).
+    U_all: Any = None
+    Z_all: Any = None
+    fit_seq: int = 0
+
+
+def wrap_mu_for_capture(
+    mu_method: dict,
+    *,
+    store,
+    ctx: CaptureCallContext,
+) -> dict:
+    """Return a shallow copy of mu_method that logs fits and point predictions.
+
+    For every fit_global call, stores μ_RF for **every** group in ctx.Z_all
+    (calib + test), keyed by (fit_id, group_id=slot, row_idx). Training may use
+    only a subset of groups; predictions must still be available for all.
+    """
+    out = dict(mu_method)
+    orig_fit = mu_method["fit_global"]
+    orig_pred_global = mu_method["predict_global"]
+    orig_pred_group = mu_method["predict_group_mu"]
+    orig_fit_adj = mu_method["fit_group_adjustment"]
+    pred_log: list[dict] = []
+
+    def fit_global(U_matrix, Z_list, group_index_vector):
+        ctx.fit_seq += 1
+        model = orig_fit(U_matrix, Z_list, group_index_vector)
+        fit_id = f"e{ctx.experiment}_{ctx.call_id}_f{ctx.fit_seq}"
+        comp_slots = [int(g) for g in group_index_vector]
+        n_comp = len(comp_slots)
+        # Prefer full experiment groups; fall back to Z_list if not provided.
+        if ctx.Z_all is not None and ctx.U_all is not None:
+            Z_score = ctx.Z_all
+            U_score = ctx.U_all
+        else:
+            Z_score = Z_list
+            U_score = U_matrix
+        mu_rows = []
+        for slot, Zg in enumerate(Z_score):
+            if not Zg:
+                continue
+            Xg = np.array([z["X"] for z in Zg], dtype=float)
+            u = U_score[slot, :]
+            mu_batch = _predict_batch(model, Xg, u)
+            for row_idx, mu_val in enumerate(mu_batch):
+                mu_rows.append({
+                    "fit_id": fit_id,
+                    "experiment": int(ctx.experiment),
+                    "call_id": ctx.call_id,
+                    "group_id": int(slot),
+                    "row_idx": int(row_idx),
+                    "mu_global": float(mu_val),
+                })
+        store.write_global_fit(
+            fit_id=fit_id,
+            experiment=ctx.experiment,
+            call_id=ctx.call_id,
+            hcp_method=ctx.hcp_method,
+            o=ctx.o,
+            comp_slots=comp_slots,
+            n_groups_total=len(Z_score),
+            mu_rows=mu_rows,
+        )
+        if model is not None:
+            model._capture_fit_id = fit_id  # type: ignore[attr-defined]
+            model._capture_n_comp = n_comp  # type: ignore[attr-defined]
+            model._n_comp_groups = n_comp  # type: ignore[attr-defined]
+        return model
+
+    def predict_global(model_global, x_vector, u_vector):
+        return float(orig_pred_global(model_global, x_vector, u_vector))
+
+    def predict_group_mu(model_global, group_adjustment, x_vector, u_group_vector):
+        mu_g = float(orig_pred_global(model_global, x_vector, u_group_vector))
+        mu_pred = float(orig_pred_group(model_global, group_adjustment, x_vector, u_group_vector))
+        if isinstance(group_adjustment, dict):
+            group_mean = float(group_adjustment.get("group_mean", 0.0))
+            tau_eff = int(group_adjustment.get("tau", 0))
+            n_comp = int(getattr(model_global, "_capture_n_comp", 0))
+            c = float(mu_method.get("c", 0.5))
+            w_g = float(global_weight(n_comp, tau_eff, c)) if tau_eff > 0 else 1.0
+            pred_log.append({
+                "experiment": int(ctx.experiment),
+                "call_id": ctx.call_id,
+                "hcp_method": ctx.hcp_method,
+                "o": int(ctx.o),
+                "fit_id": getattr(model_global, "_capture_fit_id", ""),
+                "mu_global": mu_g,
+                "group_mean": group_mean,
+                "tau": tau_eff,
+                "w_g": w_g,
+                "mu_pred": mu_pred,
+            })
+        return mu_pred
+
+    def fit_group_adjustment(model_global, u_group_vector, Z_group_list, training_index_vector):
+        return orig_fit_adj(model_global, u_group_vector, Z_group_list, training_index_vector)
+
+    out["fit_global"] = fit_global
+    out["predict_global"] = predict_global
+    out["predict_group_mu"] = predict_group_mu
+    out["fit_group_adjustment"] = fit_group_adjustment
+    out["_capture_pred_log"] = pred_log
+    return out
+
+
+def drain_pred_log(mu_wrapped: dict) -> list[dict]:
+    return list(mu_wrapped.pop("_capture_pred_log", []))

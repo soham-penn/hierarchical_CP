@@ -1,0 +1,53 @@
+{
+  "suite": "acs/min21",
+  "description": "CA foreign-born YOEP>=2000, age 25\u201354, hours>=40; uniform_one_target; row permutation ON; studentized Std-CP (RF local)",
+  "seed": 456,
+  "quantile_base_seed": 456,
+  "quantile_mode": "deterministic",
+  "stdcp_quantile_mode": "randomized",
+  "permute_rows": true,
+  "design": "uniform_one_target",
+  "min_puma_size": 21,
+  "target_index": 20,
+  "o_values": [
+    0,
+    5,
+    10,
+    15,
+    20
+  ],
+  "n_puma_groups": 20,
+  "B": 1000,
+  "alphas": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ],
+  "n_workers": 7,
+  "predictor": "rf",
+  "within_group_mode": "mean",
+  "score_type": "absolute",
+  "stdcp_score_type": "studentized",
+  "stdcp_center": "local",
+  "yoep_min_year": 2000,
+  "no_age_filter": false,
+  "no_hours_filter": false,
+  "age_range": [
+    25,
+    54
+  ],
+  "min_hours": 40,
+  "exclude_entry_recency": true,
+  "include_cow": false,
+  "alpha20_stdcp_o": [
+    0,
+    5,
+    10,
+    15,
+    20
+  ],
+  "alpha10_stdcp_o": null,
+  "selection_seed_formula": "seed + replicate_idx * 1009",
+  "row_permutation_seed_formula": "seed + replicate_idx * 1009 + 811"
+}

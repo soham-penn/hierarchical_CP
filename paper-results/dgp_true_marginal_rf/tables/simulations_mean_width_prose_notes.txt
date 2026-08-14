@@ -1,0 +1,7 @@
+% Auto-computed from width_mean / width_se in fixedN21 & poisson summaries
+% Fixed N21 GHCP mean-width reduction o=0→20: 60.27%  (means 34.149863 → 13.569282)
+% Fixed N21 GHCP width SE reduction o=0→20: 64.90%  (SE 0.267488 → 0.093901)
+% Fixed N21 WGT vs no-WGT mean-width reduction at o=20: 49.13%  (26.675947 → 13.569282)
+% Poisson GHCP mean-width reduction o=0→20: 57.66%  (means 34.289083 → 14.519109)
+% Suggested prose (fixed): At $o=20$, the mean width is reduced by 60\%, and the standard error of the width is reduced by 65\%, relative to $o=0$.
+% Suggested prose (WGT): For $o=20$, WGT yields a 49\% reduction in mean width relative to no-WGT.

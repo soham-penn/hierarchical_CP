@@ -129,7 +129,7 @@ def _get_o_color(o_val):
     return O_COLORS.get(key, '#555555')
 
 METHOD_RENAME = {
-    'donor-HCP-randomized': 'D-HCP',
+    'donor-HCP-randomized': 'GHCP',
     'donor-HCP-derandomized': 'DD-HCP',
     'sample-HCP-randomized': 'S-HCP',
     'sample-HCP-derandomized': 'D-Sample-HCP',
@@ -305,7 +305,7 @@ def run_one_replicate(df, X, calib_groups, test_groups, group_col,
 
     # ------------------------------------------------------------------
     # 3. Baseline methods: use donor-style train/calib split with o=0
-    #    This ensures HCP at o=0 matches D-HCP at o=0 (as in DGP experiments)
+    #    This ensures HCP at o=0 matches GHCP at o=0 (as in DGP experiments)
     # ------------------------------------------------------------------
     from methods.donor_hcp import get_donor_style_train_cal_split
 
@@ -878,7 +878,7 @@ def draw_acs_dgp_style_plots(results, output_dir, tag, title, alpha=0.2):
     )
 
     fig.suptitle(
-        f'D-HCP / S-HCP vs HCP / Std-CP  -  {title}',
+        f'GHCP / S-HCP vs HCP / Std-CP  -  {title}',
         fontsize=title_fs,
         fontweight='bold',
         y=0.98,

@@ -19,10 +19,14 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SUITE_ROOT = REPO_ROOT / "plots_marginal" / "acs" / "min21"
+# Allow HCP_PLOTS_MARGINAL to redirect the suite (Algorithm-1 audit reruns).
+sys.path.insert(0, str(REPO_ROOT))
+from code.paths import PLOTS_MARGINAL  # noqa: E402
+
+SUITE_ROOT = PLOTS_MARGINAL / "acs" / "min21"
 SEED = 456
 QUANTILE_BASE_SEED = 456
-RF_RESULTS = REPO_ROOT / "plots_marginal" / "acs" / "rf" / "results"
+RF_RESULTS = PLOTS_MARGINAL / "acs" / "rf" / "results"
 
 
 def _manifest(*, alphas: list[float], B: int, n_workers: int, full_stdcp: bool) -> dict:
@@ -35,6 +39,7 @@ def _manifest(*, alphas: list[float], B: int, n_workers: int, full_stdcp: bool) 
         "seed": SEED,
         "quantile_base_seed": QUANTILE_BASE_SEED,
         "quantile_mode": "deterministic",
+        "stdcp_quantile_mode": "randomized",
         "permute_rows": True,
         "design": "uniform_one_target",
         "min_puma_size": 21,
@@ -96,6 +101,8 @@ def _run_one(
         "--B", str(B),
         "--n_workers", str(n_workers),
         "--score_type", "absolute",
+        "--quantile-mode", "deterministic",
+        "--stdcp-quantile-mode", "randomized",
         "--quantile-base-seed", str(QUANTILE_BASE_SEED),
     ]
     if skip_stdcp:
