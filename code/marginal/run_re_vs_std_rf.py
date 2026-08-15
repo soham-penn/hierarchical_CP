@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """GHCP: RE variance weights vs standard merger w_g = |S| / (|S| + τ).
 
+Not used for paper tables or figures (exploratory extras under
+``paper-results/dgp/figures/re_vs_std/``).
+
 Train RF on Strain = S_comp. Estimate (σ̂², τ̂_B²) by classical MoM on RF
 residuals on S_cal (held out). No LOGO.
 

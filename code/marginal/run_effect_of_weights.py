@@ -201,7 +201,7 @@ def run_experiment(config: dict, n_workers: int, chunk_size: int) -> pd.DataFram
     out_dir.mkdir(parents=True, exist_ok=True)
     chunk_dir.mkdir(parents=True, exist_ok=True)
 
-    n_chunks = max(int(n_workers), int(np.ceil(config["total_replicates"] / chunk_size)))
+    n_chunks = int(np.ceil(config["total_replicates"] / max(int(chunk_size), 1)))
     chunk_sizes = split_counts(config["total_replicates"], n_chunks)
     offsets = np.cumsum([0] + chunk_sizes[:-1]).tolist()
 

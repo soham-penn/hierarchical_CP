@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Lean DGP RF experiment: compare GHCP merger rules (no Std-CP / sample / derand).
 
+Not used for paper tables or figures (exploratory extras under
+``paper-results/dgp/figures/merger_compare/``).
+
 Mergers for GHCP+WGT:
   - eq4     : c=1  (paper Eq. 4)  w_g = |Strain| / (|Strain| + τ)
   - sqrt    : c=0.5 (legacy)      w_g = |Strain|^{1/2} / (|Strain|^{1/2} + τ)

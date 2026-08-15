@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Compare Std-CP absolute vs studentized (DGP + ACS), write tables and plots."""
+"""Compare Std-CP absolute vs studentized (DGP + ACS), write tables and plots.
+
+Not used for paper tables or figures.
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Plot GHCP merger comparison (eq4 / sqrt / bayes_re) for α=0.1 DGP RF."""
+"""Plot GHCP merger comparison (eq4 / sqrt / bayes_re) for α=0.1 DGP RF.
+
+Not used for paper tables or figures.
+"""
 
 from __future__ import annotations
 

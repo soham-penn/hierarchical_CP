@@ -1,0 +1,39 @@
+% Size-shift GHCP table (App. D.3). Source: summary_by_xi_o.csv
+% ξ ∈ {-0.75, 0.0, 0.5, 0.75}.
+\begin{table}
+\centering
+\caption{\footnotesize Empirical coverage and mean interval width for GHCP
+under size--intercept coupling $\xi$, Poisson DGP of Sec.\,3.1 except $B_j$,
+$\gamma=5$, $\alpha=0.1$. Entries are means across $B=1000$ trials,
+with standard errors in parentheses. All intervals were finite.}
+\label{tab:size-shift}
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lccccc}
+\toprule
+& \multicolumn{5}{c}{Test-group sample size $o$} \\
+\cmidrule(lr){2-6}
+$\xi$ & 0 & 5 & 10 & 15 & 20 \\
+\midrule
+\multicolumn{6}{l}{\textit{Empirical coverage} ($1-\alpha=0.90$)} \\[2pt]
+$\xi=-0.75$
+& 0.955 (0.007) & 0.951 (0.007) & 0.950 (0.007) & 0.937 (0.008) & 0.904 (0.009) \\
+$\xi=0$
+& 0.937 (0.008) & 0.935 (0.008) & 0.933 (0.008) & 0.925 (0.008) & 0.921 (0.009) \\
+$\xi=0.5$
+& 0.946 (0.007) & 0.943 (0.007) & 0.941 (0.007) & 0.932 (0.008) & 0.909 (0.009) \\
+$\xi=0.75$
+& 0.945 (0.007) & 0.938 (0.008) & 0.939 (0.008) & 0.934 (0.008) & 0.891 (0.010) \\
+\addlinespace[4pt]
+\multicolumn{6}{l}{\textit{Mean interval width}} \\[2pt]
+$\xi=-0.75$
+& 38.027 (0.292) & 30.247 (0.236) & 23.329 (0.179) & 18.863 (0.146) & 14.184 (0.106) \\
+$\xi=0$
+& 34.274 (0.265) & 27.255 (0.218) & 21.037 (0.165) & 17.607 (0.136) & 14.478 (0.107) \\
+$\xi=0.5$
+& 34.785 (0.263) & 27.727 (0.211) & 21.498 (0.162) & 17.877 (0.132) & 14.374 (0.106) \\
+$\xi=0.75$
+& 36.149 (0.260) & 28.778 (0.210) & 22.275 (0.162) & 18.276 (0.131) & 14.169 (0.105) \\
+\bottomrule
+\end{tabular}
+\end{table}

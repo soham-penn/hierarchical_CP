@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Paper plotting for true-marginal experiments.
 
-Canonical Simulations suite (paper):
-  dgp_rf  — latent intercept γ=5, RF global μ, absolute residual score
+Canonical Simulations suite (paper Section 3.1):
+  dgp_rf  — latent intercept γ=5, RF global μ, absolute residual score, c=1
             plots → paper-results/dgp/
             raw   → paper-results/results/dgp/true_marg_latent_rf_gamma5p0_*
+
+Public alias for this suite: ``plot_section_3_1.py``.
 
 ACS plotting wrappers remain available; the active real-data suite is `paper-results/acs/`.
 Alternate DGP suites (OLS, γ=0, studentized, capture, …) live under old/code/.

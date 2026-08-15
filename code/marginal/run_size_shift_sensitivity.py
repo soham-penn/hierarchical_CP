@@ -7,9 +7,11 @@ Reference-group sizes N_j = M_j ~ Poi(25). The latent intercept is
 
 with M_{K+1} latent for the test group (used only to form B_{K+1}). The
 observed test stream follows the Poisson GHCP protocol: length
-target_index+1 (36 when target_index=35); history is the first o rows.
-ξ=0 recovers the paper Poisson DGP. Each replicate shares (U, M, ε, X)
-across ξ.
+    target_index+1 (36 when target_index=35); history is the first o rows.
+|ξ|<1; ξ=0 recovers the paper Poisson DGP. Each replicate shares
+(U, M, ε, X) across ξ. Negative ξ is the same coupling with opposite sign.
+Default ξ grid (paper 2×2): {−0.75, 0, 0.5, 0.75}. A default run overwrites
+the trial CSV; pass --merge-existing-xi to keep other ξ.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ from methods.donor_hcp import compute_donor_hcp_randomized_interval
 from methods.mu_methods import create_mu_method_random_forest_offset
 from scores import make_quantile_seed
 
-XI_GRID = (0.0, 0.25, 0.50, 0.75)
+XI_GRID = (-0.75, 0.0, 0.5, 0.75)
 RF_NTREE = 50
 RF_NODESIZE = 5
 RF_RANDOM_STATE = 123
@@ -192,6 +194,27 @@ def _run_one(config, mu_hcp, experiment_id):
     return rows
 
 
+def _xi_in_grid(xi, grid) -> bool:
+    return any(np.isclose(float(xi), float(v)) for v in grid)
+
+
+def _merge_existing_xi(raw_csv: Path, results: pd.DataFrame, xi_grid) -> pd.DataFrame:
+    """Keep previously saved ξ cells that were not recomputed in this run.
+
+    Draws of (U, M, ε, X) do not depend on the ξ loop (GHCP uses isolated RNGs),
+    so a negative-ξ follow-up can be merged onto the original ξ≥0 file.
+    """
+    if not raw_csv.exists() or results.empty:
+        return results
+    prev = pd.read_csv(raw_csv)
+    keep = ~prev["xi"].map(lambda x: _xi_in_grid(x, xi_grid))
+    kept = prev.loc[keep]
+    if len(kept) == 0:
+        return results
+    print(f"Merging {len(kept)} existing rows (other ξ) with {len(results)} new rows")
+    return pd.concat([kept, results], ignore_index=True)
+
+
 def run_chunk(worker_id, number_experiments_chunk, experiment_offset, config):
     print(f"  chunk {worker_id}: start ({number_experiments_chunk} reps)", flush=True)
     np.random.seed(BASE_SEED + 1000 * worker_id)
@@ -221,7 +244,7 @@ def run_experiment(config: dict, n_workers: int, chunk_size: int) -> pd.DataFram
     out_dir.mkdir(parents=True, exist_ok=True)
     chunk_dir.mkdir(parents=True, exist_ok=True)
 
-    n_chunks = max(int(n_workers), int(np.ceil(config["total_replicates"] / chunk_size)))
+    n_chunks = int(np.ceil(config["total_replicates"] / max(int(chunk_size), 1)))
     chunk_sizes = split_counts(config["total_replicates"], n_chunks)
     offsets = np.cumsum([0] + chunk_sizes[:-1]).tolist()
 
@@ -249,10 +272,14 @@ def run_experiment(config: dict, n_workers: int, chunk_size: int) -> pd.DataFram
             print(f"[{i}/{len(futures)}] chunk {wid} done ({len(part)} rows)")
 
     results = pd.concat(parts, ignore_index=True)
+    raw_csv = out_dir / f"{tag}_raw_results_complete.csv"
+    if bool(config.get("merge_existing_xi", False)):
+        results = _merge_existing_xi(raw_csv, results, config["xi_grid"])
+    elif raw_csv.exists():
+        print(f"Replacing {raw_csv} (pass --merge-existing-xi to keep other ξ)")
     results = results.sort_values(
         ["experiment", "xi", "o_observed"]
     ).reset_index(drop=True)
-    raw_csv = out_dir / f"{tag}_raw_results_complete.csv"
     results.to_csv(raw_csv, index=False)
     print(f"Saved: {raw_csv} ({len(results)} rows)")
 
@@ -266,7 +293,7 @@ def run_experiment(config: dict, n_workers: int, chunk_size: int) -> pd.DataFram
         "total_replicates": int(config["total_replicates"]),
         "o_values": list(config["o_values"]),
         "target_index": int(config["target_index"]),
-        "xi_grid": list(config["xi_grid"]),
+        "xi_grid": [float(x) for x in config["xi_grid"]],
         "quantile_mode": config.get("quantile_mode", "deterministic"),
         "base_seed": BASE_SEED,
         "chunk_seed_formula": "np.random.seed(BASE_SEED + 1000 * chunk_id)",
@@ -289,9 +316,20 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--B", type=int, default=1000)
     p.add_argument("--alpha", type=float, default=0.1)
-    p.add_argument("--n_workers", type=int, default=4)
+    p.add_argument("--n_workers", type=int, default=6)
     p.add_argument("--chunk-size", type=int, default=25)
     p.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
+    p.add_argument(
+        "--xi",
+        type=str,
+        default="",
+        help="Comma-separated ξ grid (default: −0.75, 0, 0.5, 0.75).",
+    )
+    p.add_argument(
+        "--merge-existing-xi",
+        action="store_true",
+        help="Keep previously saved ξ that are not in this run (incremental).",
+    )
     return p.parse_args()
 
 
@@ -306,9 +344,13 @@ def main() -> None:
     )
     cfg = dict(configs["poissonNmean25"])
     cfg["o_values"] = list(O_VALUES)
-    cfg["xi_grid"] = list(XI_GRID)
+    if str(args.xi).strip():
+        cfg["xi_grid"] = [float(x) for x in str(args.xi).split(",") if str(x).strip()]
+    else:
+        cfg["xi_grid"] = list(XI_GRID)
     cfg["total_replicates"] = int(args.B)
     cfg["alpha"] = float(args.alpha)
+    cfg["merge_existing_xi"] = bool(args.merge_existing_xi)
     run_experiment(cfg, n_workers=int(args.n_workers), chunk_size=int(args.chunk_size))
 
 

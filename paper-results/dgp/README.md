@@ -23,12 +23,14 @@ Parent: [`paper-results/`](../README.md).
 - \(B=1000\); GHCP/HCP quantiles deterministic; Std-CP randomized.
 - \(o\in\{0,5,10,15,20\}\).
 
-| Config | \(N_j\) | Target index | Test-stream length |
-|--------|---------|--------------|--------------------|
-| `fixedN21` | \(21\) | 20 | 21 (history \(0{:}o-1\), predict index 20) |
+| Config | \(N_j\) (refs) | Target index | Test-stream length |
+|--------|----------------|--------------|--------------------|
+| `fixedN21` | \(21\) | 35 | 36 (history \(0{:}o-1\), predict index 35) |
 | `poissonNmean25` | \(\mathrm{Poi}(25)\), redraw 0 | 35 | \(\ge 36\) (history \(0{:}o-1\), predict index 35) |
 
-The Poisson target is held at a fixed later index so the same \(Y\) is scored for every \(o\).
+The scored \(Y\) is held at a later index so the same outcome is evaluated for
+every \(o\). Paper panels use \(o\in\{0,5,10,15,20\}\); trials also store
+\(o\in\{25,30,35\}\) (`figures/fixedN21_alpha0p1_coverage_width_by_o_upto35.pdf`).
 
 ## Paper section map
 
@@ -63,17 +65,18 @@ suite (not this RF-only folder). App. D.3–D.4 are `../size_shift/` and
 | `poissonNmean25` | 457 | 25 | 40 | `457 + 1000*i` |
 
 ```bash
-.venv/bin/python code/marginal/run_true_marginal_latent_intercept_rf_experiments.py \
-  --alphas 0.05,0.1,0.15,0.2 --gamma 5 \
-  --configs fixedN21,poissonNmean25 \
-  --total_replicates 1000 --n_workers 8 --quantile-mode deterministic
-
-.venv/bin/python code/marginal/plot_paper.py --suite dgp_rf
-.venv/bin/python code/marginal/export_paper_tables_mean_width.py
-.venv/bin/python code/marginal/export_paper_tables_baselines.py
+.venv/bin/python code/marginal/run_section_3_1.py --n_workers 8
+.venv/bin/python code/marginal/plot_section_3_1.py
 ```
 
-Plots only (shipped CSVs): `.venv/bin/python code/marginal/plot_paper.py --suite dgp_rf`
+Plots only (shipped CSVs): `.venv/bin/python code/marginal/plot_section_3_1.py`
 
-Runners: `run_true_marginal_latent_intercept_rf_experiments.py`,
-`run_true_marginal_latent_intercept_experiments.py`.
+`--n_workers` is concurrency only; chunk count is \(B\) / chunk size (8 and 40).
+
+The section launcher delegates to
+`run_true_marginal_latent_intercept_rf_experiments.py` (RF, \(c=1\)).
+`run_true_marginal_latent_intercept_experiments.py` is the OLS analogue and
+is **not** used for paper figures.
+
+`figures/merger_compare/`, `re_vs_std/`, and `oracleB_vs_re/` are leftover
+exploratory plots (empirical-Bayes / oracle-\(B\)). They are not Section 3.1.

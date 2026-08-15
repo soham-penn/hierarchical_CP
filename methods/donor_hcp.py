@@ -1,9 +1,15 @@
 """
-Donor-HCP methods.
+GHCP (paper Algorithm 1): restricted donor hierarchical conformal prediction.
 
-This module exposes two separate variants:
-- randomized donor-HCP (legacy HCP++)
-- derandomized donor-HCP (closed-form averaged donor measure)
+Public routine for paper experiments: ``compute_donor_hcp_randomized_interval``
+with ``quantile_mode="deterministic"`` and ``alpha_selection=0.5`` (η=0.5).
+
+An older working name for this method was “HCP++”; that name is not used in
+the paper. ``compute_donor_hcp_derandomized_interval`` is a closed-form
+average over donors and is not used in the paper tables.
+
+The empirical-Bayes merger (``mu_method["merger"] in {"bayes_re","bayes","re"}``)
+is opt-in and unused in Section 3.1/3.2.
 """
 
 import numpy as np

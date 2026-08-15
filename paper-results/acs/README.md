@@ -47,7 +47,7 @@ acs/
 ### Reproduce
 
 ```bash
-.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
+.venv/bin/python code/marginal/run_section_3_2.py \
   --alphas 0.05,0.1,0.15,0.2 --B 1000 --n_workers 7 --skip_stdcp --plot
 
 .venv/bin/python code/marginal/recompute_acs_stdcp_randomized_min21.py \
@@ -59,5 +59,6 @@ acs/
 .venv/bin/python real_data/acs/run_size_ignorability_diagnostics.py
 ```
 
-Core runner: `code/marginal/run_acs_experiments.py`  
+Core runner: `code/marginal/run_acs_experiments.py`
+Public launcher: `code/marginal/run_section_3_2.py`  
 Filters: `real_data/acs/data_processing.py`

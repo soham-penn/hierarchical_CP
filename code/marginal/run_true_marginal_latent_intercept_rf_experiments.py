@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""True-marginal latent-intercept DGP (gamma) with Random Forest global predictors."""
+"""True-marginal latent-intercept DGP (gamma) with Random Forest global predictors.
+
+Paper Section 3.1 runner. Public alias: ``run_section_3_1.py``.
+
+Uses merger (3) with c=1 (``create_mu_method_random_forest_offset(..., c=1.0)``).
+Does not enable the empirical-Bayes merger, residual correction, or local-RF offset.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from code.shared.dgp.experiments import run_experiments_outer
-from code.shared.plot_engine import PAPER_ALPHA_GRID_STR
+from code.shared.plot_engine import PAPER_SUITE_ALPHAS_STR
 from code.paths import RESULTS_DGP_MARGINAL
 from code.marginal.run_true_marginal_latent_intercept_experiments import (
     BASE_SEED,
@@ -41,7 +47,7 @@ RESULTS_PREFIX = "true_marg_latent_rf"
 RF_NTREE = 50
 RF_NODESIZE = 5
 RF_RANDOM_STATE = 123
-N_WORKERS_DEFAULT = 18
+N_WORKERS_DEFAULT = 8
 
 print = functools.partial(print, flush=True)
 
@@ -155,12 +161,14 @@ def run_experiment(config_name: str, config: dict, n_workers: int, chunk_size: i
     print("=" * 96)
 
     # Chunk layout fixes RNG streams (seed = BASE_SEED + 1000 * chunk_id).
+    # n_chunks is determined by B and chunk_size only, so --n_workers is
+    # concurrency and does not change seeds (shipped: 8 and 40 chunks).
     chunk_size = int(chunk_size)
     if chunk_size <= 0:
         n_chunks = int(n_workers)
         max_chunk = None
     else:
-        n_chunks = max(int(n_workers), int(np.ceil(config["total_replicates"] / chunk_size)))
+        n_chunks = int(np.ceil(config["total_replicates"] / chunk_size))
         max_chunk = chunk_size
     chunk_sizes = split_counts(config["total_replicates"], n_chunks)
     offsets = np.cumsum([0] + chunk_sizes[:-1]).tolist()
@@ -254,7 +262,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="True-marginal latent-intercept DGP with RF global predictors."
     )
-    parser.add_argument("--alphas", type=str, default=PAPER_ALPHA_GRID_STR)
+    parser.add_argument("--alphas", type=str, default=PAPER_SUITE_ALPHAS_STR)
     parser.add_argument("--configs", type=str, default="fixedN21,poissonNmean25")
     parser.add_argument("--total_replicates", type=int, default=1000)
     parser.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)

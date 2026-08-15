@@ -35,6 +35,8 @@ _spec.loader.exec_module(pm)
 OUT_DIR = PLOTS_MARGINAL / "effect_of_weights" / "ud_narrow_gamma0"
 FIGSIZE = (18.0, 14.0)
 FONTS = pm._stacked_panel_fonts()
+# Axis titles: smaller than stacked DGP figures (46) so they fit the 2×2.
+AXIS_LABEL_SIZE = 40
 # ud_narrow only: 2×2 over λ_local ∈ {1/7, 3/7, 4/7, 6/7}.
 LAMBDA_LOCAL_PANELS = (1 / 7, 3 / 7, 4 / 7, 6 / 7)
 PREDICTORS = ("rf", "bayes")
@@ -184,7 +186,7 @@ def _plot_coverage(summary: pd.DataFrame, *, alpha: float, out_stem: Path) -> No
         ax.set_title(_panel_title(lam), fontsize=FONTS["title"], color=pm.INK_COLOR, pad=16)
         xlabel = pm.X_LABEL_TARGET_O if i // 2 == 1 else ""
         ylab = ylabel if i % 2 == 0 else ""
-        pm._style_axis(ax, xlabel, ylab, tick=FONTS["tick"], label=FONTS["label"])
+        pm._style_axis(ax, xlabel, ylab, tick=FONTS["tick"], label=AXIS_LABEL_SIZE)
         _set_o_ticks(ax)
     _add_fig_legend(fig)
     _save(fig, out_stem)
@@ -194,7 +196,6 @@ def _plot_width_boxplots(df: pd.DataFrame, summary: pd.DataFrame, *, out_stem: P
     lambs = _panel_lambdas(summary)
     fig, axes = _new_grid()
     all_groups: list[np.ndarray] = []
-    ylabel_size = 28
     for i, lam in enumerate(lambs):
         ax = axes[i // 2, i % 2]
         w_g = 1.0 - float(lam)
@@ -225,7 +226,7 @@ def _plot_width_boxplots(df: pd.DataFrame, summary: pd.DataFrame, *, out_stem: P
         ax.set_title(_panel_title(lam), fontsize=FONTS["title"], color=pm.INK_COLOR, pad=16)
         xlabel = pm.X_LABEL_TARGET_O if i // 2 == 1 else ""
         ylab = pm.Y_LABEL_WIDTH if i % 2 == 0 else ""
-        pm._style_axis(ax, xlabel, ylab, tick=FONTS["tick"], label=ylabel_size)
+        pm._style_axis(ax, xlabel, ylab, tick=FONTS["tick"], label=AXIS_LABEL_SIZE)
         _set_o_ticks(ax)
 
     width_upper = pm._width_axis_upper_from_box_groups(all_groups)
@@ -255,27 +256,6 @@ def main() -> None:
         out_stem=OUT_DIR / "coverage_by_weight",
     )
     _plot_width_boxplots(df, summary, out_stem=OUT_DIR / "width_by_weight")
-
-    readme = "\n".join(
-        [
-            "# Effect of weights: narrow $U_d$, $\\gamma=0$",
-            "",
-            "Poi(25) DGP with $U_{1:d-1}\\sim\\mathrm{Unif}(1,5)$, "
-            "$U_d\\sim\\mathrm{Unif}(1,2)$, $B_j=0$.",
-            "Restricted GHCP ($\\eta=0.5$) over "
-            "$\\lambda_{\\mathrm{local}}\\in\\{1/7,3/7,4/7,6/7\\}$ for RF and "
-            "Bayes $E[Y\\mid X,U]$, $o\\in\\{0,5,10,15,20\\}$.",
-            "",
-            "2×2 Simulations-style panels (coverage with SE; twin width boxplots).",
-            "",
-            "```bash",
-            ".venv/bin/python code/marginal/run_effect_of_weights_ud_narrow.py --B 1000 --n_workers 6",
-            ".venv/bin/python code/marginal/plot_effect_of_weights_ud_narrow.py",
-            "```",
-            "",
-        ]
-    )
-    (OUT_DIR / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote {OUT_DIR}")
     print(summary.to_string(index=False))
 

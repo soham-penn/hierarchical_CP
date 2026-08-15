@@ -18,21 +18,13 @@ echo "Configs: fixedN21 (chunk=125) + poissonNmean25 (chunk=25); BASE_SEED=457; 
 echo "Appendix D.3–D.4: paper-results/logs/run_appendix_sensitivity.sh"
 
 echo "===== DGP shared-alpha sims $(date) ====="
-"$PY" -u code/marginal/run_true_marginal_latent_intercept_rf_experiments.py \
-  --alphas "$ALPHAS_ALL" \
-  --gamma 5 \
-  --configs fixedN21,poissonNmean25 \
-  --total_replicates 1000 \
-  --n_workers "$DGP_WORKERS" \
-  --quantile-mode deterministic
+"$PY" -u code/marginal/run_section_3_1.py --n_workers "$DGP_WORKERS"
 
 echo "===== DGP plots/tables $(date) ====="
-"$PY" -u code/marginal/plot_paper.py --suite dgp_rf
-"$PY" -u code/marginal/export_paper_tables_mean_width.py || true
-"$PY" -u code/marginal/export_paper_tables_baselines.py || true
+"$PY" -u code/marginal/plot_section_3_1.py
 
 echo "===== ACS GHCP/HCP (skip Std-CP) $(date) ====="
-"$PY" -u code/marginal/run_acs_yoep_fb_min21_permute.py \
+"$PY" -u code/marginal/run_section_3_2.py \
   --alphas "$ALPHAS_ALL" \
   --B 1000 --n_workers "$ACS_WORKERS" --skip_stdcp --plot
 

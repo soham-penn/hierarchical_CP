@@ -1,9 +1,12 @@
 """Hierarchical conformal prediction methods.
 
-  - donor_hcp: GHCP (paper Algorithm 1; restricted donor pool, η)
+  - donor_hcp: GHCP (paper Algorithm 1; restricted donor pool, η=0.5)
   - baseline_hcp: HCP, pooling, subsampling, repeated subsampling
-  - mu_methods: RF / OLS / Bayes; merger paper (3)
-  - sample_hcp: sample-HCP
+  - mu_methods: RF / OLS; paper (3) with c=1 for all paper tables
+  - sample_hcp: S-HCP baseline (legacy name HCP.sample)
+
+The paper never refers to GHCP as HCP++. That was an old working name in
+``donor_hcp.py``.
 """
 
 from .mu_methods import (

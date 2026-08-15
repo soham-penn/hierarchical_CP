@@ -46,9 +46,11 @@ O_VALUES = [0, 5, 10, 15, 20]
 O_VALUES_UPTO35 = [0, 5, 10, 15, 20, 25, 30, 35]
 FIXED_NOMINAL_O_VALUES = [0, 10, 20]
 FIXED_ALPHA_PANEL_VALUES = [0.05, 0.10]
+PAPER_SUITE_ALPHAS = [0.05, 0.10, 0.15, 0.20]
+PAPER_SUITE_ALPHAS_STR = "0.05,0.1,0.15,0.2"
 ALPHA_FOR_WITHIN_COMPARISON = 0.1
 NOMINAL_COVERAGE_MAX = 0.90
-# Full miscoverage grid used for coverage_lines_width_boxplots.
+# Legacy extra α grid (not used by Section 3.1 launchers).
 PAPER_ALPHA_GRID = [0.05, 0.075, 0.10, 0.125, 0.15, 0.175, 0.20, 0.225, 0.25]
 PAPER_ALPHA_GRID_STR = ",".join(str(a) for a in PAPER_ALPHA_GRID)
 STABILITY_ALPHAS = [0.20, 0.15, 0.10]
@@ -233,14 +235,19 @@ def _plot_tag(alpha: float) -> str:
 def _raw_files(dataset: str) -> list[Path]:
     """Load raw result CSVs from paper-results/results/dgp."""
     search_roots = [RESULTS_DGP_MARGINAL, REPO_ROOT / "results" / "dgp"]
+    patterns = (
+        f"true_marg_latent_rf_gamma5p0_{dataset}_alpha*/*_raw_results_complete.csv",
+        f"true_marg_{dataset}_alpha*/*_raw_results_complete.csv",
+    )
     by_alpha: dict[float, Path] = {}
     for root in search_roots:
         if not root.exists():
             continue
-        for path in sorted(root.glob(f"true_marg_{dataset}_alpha*/*_raw_results_complete.csv")):
-            alpha = _alpha_from_path(path)
-            if alpha not in by_alpha:
-                by_alpha[alpha] = path
+        for pattern in patterns:
+            for path in sorted(root.glob(pattern)):
+                alpha = _alpha_from_path(path)
+                if alpha not in by_alpha:
+                    by_alpha[alpha] = path
     files = [by_alpha[a] for a in sorted(by_alpha)]
     if not files:
         raise FileNotFoundError(

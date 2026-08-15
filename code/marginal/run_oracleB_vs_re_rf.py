@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Compare GHCP: oracle E[Y|X,U,B] (no merge) vs RF + variance-based shrinkage.
 
+Not used for paper tables or figures (exploratory extras under
+``paper-results/dgp/figures/oracleB_vs_re/``).
+
 Methods
 -------
 oracle_B

@@ -34,12 +34,14 @@ old/
 | Path | Role |
 |------|------|
 | `paper-results/` | Canonical figures, tables, summaries, ACS suite, nested raw CSVs |
-| `code/marginal/run_true_marginal_latent_intercept_rf_experiments.py` | Paper DGP runner |
-| `code/marginal/plot_paper.py` | Active suites: `dgp_rf`, `acs`, … |
-| `code/marginal/run_acs_experiments.py` | Core ACS runner |
-| `code/marginal/run_acs_yoep_fb_min21_permute.py` | Paper ACS launcher |
+| `code/marginal/run_section_3_1.py` | Paper Sec. 3.1 launcher |
+| `code/marginal/run_true_marginal_latent_intercept_rf_experiments.py` | Same as above (long name) |
+| `code/marginal/plot_section_3_1.py` | Sec. 3.1 figures/tables |
+| `code/marginal/run_section_3_2.py` | Paper Sec. 3.2 launcher |
+| `code/marginal/run_acs_yoep_fb_min21_permute.py` | Same as Sec. 3.2 (long name) |
 | `real_data/acs/` | ACS download, cleaning, paper plotter, size-ignorability diagnostics |
-| `code/paths.py` | Defaults → `paper-results/` |
+| `code/marginal/run_size_shift_sensitivity.py` | App. D.3 size–intercept \(\xi\) |
+| `code/marginal/run_effect_of_weights.py` | App. D.4 merger-weight grid |
 
 ## What moved out of live `real_data/`
 

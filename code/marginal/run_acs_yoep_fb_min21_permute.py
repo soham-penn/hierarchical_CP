@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-YOEP+FB min21 with row permutation.
+YOEP+FB min21 with row permutation (paper Section 3.2).
+
+Public alias: ``run_section_3_2.py``.
 
 Standard cohort filters (age 25–54, hours ≥ 40), min21 / target idx 20,
-o ∈ {0,5,10,15,20}, row permutation ON.
+o ∈ {0,5,10,15,20}. Each replicate applies a **uniform within-PUMA permutation**
+(not an income ranking). Merger (3) with c=1 (``--within_group_mode mean``).
 
 Full suite (B=1000 default): α ∈ {0.05, 0.1, 0.15, 0.2}, GHCP/HCP/baselines.
 Use --skip_stdcp to skip Std-CP. When Std-CP is on: studentized at all o for

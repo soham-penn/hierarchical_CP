@@ -99,9 +99,9 @@ paper-results/acs/**/old/
 **/*trials_long.csv
 **/acs_trials_long.csv
 
-# PNG previews (PDFs are kept)
+# PNG previews (PDFs are the paper artifacts)
 old/dgp/plots_marginal/acs/**/*.png
-paper-results/acs/**/*.png
+paper-results/**/*.png
 
 # Local scratch and large archives (regenerate locally; do not commit)
 old/dgp/plots_marginal/

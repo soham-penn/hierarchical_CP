@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""ACS Std-CP abs vs studentized with nodesize=1 (same seeds as paper)."""
+"""ACS Std-CP abs vs studentized with nodesize=1 (same seeds as paper).
+
+Not used for paper tables: paper Std-CP uses min leaf 5 and the randomized
+studentized recompute ``recompute_acs_stdcp_randomized_min21.py``.
+"""
 from __future__ import annotations
 
 import json

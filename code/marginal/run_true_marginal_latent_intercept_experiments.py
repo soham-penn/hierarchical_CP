@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import code.shared.dgp.experiments as exp_mod
 from code.shared.dgp.experiments import run_experiments_outer
-from code.shared.plot_engine import PAPER_ALPHA_GRID_STR
+from code.shared.plot_engine import PAPER_SUITE_ALPHAS_STR
 from code.paths import RESULTS_DGP_MARGINAL
 from methods import create_mu_method_ols_global_only, create_mu_method_ols_offset
 
@@ -44,10 +44,13 @@ def gamma_tag(gamma: float) -> str:
 
 
 def size_coupled_intercept(gamma, xi, m, eps, mean_m=25.0):
-    """Latent intercept with Corr(B, M) = xi and Var(B) = gamma^2."""
+    """Latent intercept with Corr(B, M) = xi and Var(B) = gamma^2.
+
+    ``xi`` may be negative (``|xi|<1``); ``sqrt(1-ξ²)`` keeps ``Var(B)=γ²``.
+    """
     xi = float(xi)
-    if xi < 0.0 or xi >= 1.0:
-        raise ValueError(f"xi must be in [0, 1), got {xi}")
+    if abs(xi) >= 1.0:
+        raise ValueError(f"xi must satisfy |xi|<1, got {xi}")
     sd_m = float(np.sqrt(mean_m))
     return float(gamma) * (
         np.sqrt(1.0 - xi * xi) * float(eps) + xi * (float(m) - float(mean_m)) / sd_m
@@ -58,7 +61,7 @@ def draw_group_latent_intercept(u_vec, n_obs, b_j, rho):
     """Draw group data with response shift B_j on the last coordinate.
 
     Each observation dict includes ``B`` (the group latent intercept) so oracle
-    predictors that know \(B\) can recover \(E[Y\\mid X,U,B]\).
+    predictors that know B can recover E[Y | X, U, B].
     """
     u = np.asarray(u_vec, dtype=float).ravel()
     d = len(u)
@@ -352,7 +355,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="True-marginal latent-intercept DGP experiments (gamma configurable)."
     )
-    parser.add_argument("--alphas", type=str, default=PAPER_ALPHA_GRID_STR)
+    parser.add_argument("--alphas", type=str, default=PAPER_SUITE_ALPHAS_STR)
     parser.add_argument("--configs", type=str, default="fixedN21,poissonNmean25")
     parser.add_argument("--total_replicates", type=int, default=1000)
     parser.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)

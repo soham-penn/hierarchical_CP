@@ -1,8 +1,8 @@
-# Effect of GHCP merger weights (App. D.4, Poi(25), \(\gamma=5\))
+# Effect of GHCP merger weights (Poi(25), $\gamma=5$)
 
-Fixed \(\lambda_{\mathrm{local}}\in\{k/7\}_{k=1}^{6}\) (2×3). Same DGP as Sec. 3.1 Poisson except the forced \(\lambda_{\mathrm{local}}\). \(\eta=0.5\), \(\alpha=0.1\), \(B=1000\). At \(o=0\), \(\tau=0\) and all panels coincide.
+Local merger weight $\lambda_{\mathrm{local}}\in\{k/7\}_{k=1}^{6}$ (2×3 panels). Same DGP as the paper Poisson design except $\gamma$.
 
-Width panels: boxplots of finite interval length (no outliers). All intervals in this run were finite.
+Figures use the Simulations plot style. Width panels are boxplots of finite interval length (no outliers).
 
 ## Width nonincreasing in $o$ (excluding $o=0$, where $\tau=0$)
 

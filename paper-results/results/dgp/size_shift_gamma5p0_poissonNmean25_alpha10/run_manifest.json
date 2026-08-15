@@ -15,6 +15,9 @@
   ],
   "target_index": 35,
   "xi_grid": [
+    -0.75,
+    -0.5,
+    -0.25,
     0.0,
     0.25,
     0.5,
@@ -71,7 +74,7 @@
     "nodesize": 5,
     "random_state": 123
   },
-  "rows": 20000,
+  "rows": 35000,
   "saved": "/Users/kcillam/Downloads/hierarchical_cp/paper-results/results/dgp/size_shift_gamma5p0_poissonNmean25_alpha10/size_shift_gamma5p0_poissonNmean25_alpha10_raw_results_complete.csv",
-  "written_at_utc": "2026-08-14T20:25:19.899154+00:00"
+  "written_at_utc": "2026-08-15T16:40:10.827366+00:00"
 }

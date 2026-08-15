@@ -1,9 +1,8 @@
 """
-Sample-HCP methods.
+S-HCP (sample hierarchical conformal prediction), a paper baseline.
 
-This module exposes two separate variants:
-- randomized sample-HCP (legacy HCP.sample)
-- derandomized sample-HCP (closed-form averaged subsampling measure)
+Paper tables call this S-HCP. An older working name was “HCP.sample”.
+Public ACS routine: ``compute_sample_hcp_randomized_interval``.
 """
 
 import numpy as np

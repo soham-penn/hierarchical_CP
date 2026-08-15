@@ -1,40 +1,28 @@
 """
-Mu-Estimation Method Objects (Random Forest + OLS)
+Mu-estimation (random forest + OLS) and the paper (3) merger.
 
-Global RF / OLS model
----------------------
-Fit once on all training groups (complement of S); produces
-  mu_global(x, u) = model.predict([x, u])
+Paper tables/figures (Sec. 3.1–3.2, App. D.3–D.4)
+-------------------------------------------------
+Use ``create_mu_method_random_forest_offset(..., c=1.0)`` with
+``tau = floor(o/2)``. That is paper Eq. (3):
 
-Group-level shrinkage
----------------------
-For each group j we observe the first tau observations Z_j[0..tau-1] as a
-within-group training history.  The within-group mean is
+  λ_local = tau / (|S_train| + tau)          (c = 1)
+  μ̃ = (1 - λ_local) μ̂_global + λ_local Ȳ
 
-  mu_bar_j = mean(Y_j[0], ..., Y_j[tau-1])     (first tau obs only)
+Code stores w_g = 1 - λ_local. The exponent ``c`` exists so that
+λ_local = tau / (|S_train|^c + tau); **paper runs always pass c=1**.
 
-The shrinkage prediction for observation (x, u) in group j is
+Not used in the paper (kept for extras / old experiments)
+---------------------------------------------------------
+- ``c != 1``
+- empirical-Bayes / RE weight ``bayes_re_global_weight`` (only if
+  ``mu_method["merger"]`` is ``bayes_re`` / ``bayes`` / ``re``; never set
+  by Section 3.1/3.2 launchers)
+- ``create_mu_method_random_forest_residual_correction`` (ridge + clip 0.5)
+- ``create_mu_method_random_forest_local_rf_offset``
 
-  mu_hat(x, u | group j) = (1 - λ_local) * mu_global(x, u)  +  λ_local * mu_bar_j
-
-where (paper Eq. (3) with λ_local = tau / (|Strain| + tau))
-
-  λ_local = tau / (|S_comp|^c + tau)
-  w_g     = 1 - λ_local = |S_comp|^c / (|S_comp|^c + tau)
-
-and
-  tau      : number of within-group training obs (= floor(o/2) in GHCP)
-  c        : exponent; default 1.0 matches Eq. (3)
-  |S_comp| : number of groups used to fit the global model (= |Strain|)
-
-When tau = 0 → pure global (no within-group history used).
-When |S_comp| → ∞ → pure global (many groups → trust global more).
-
-Performance note
-----------------
-All inner-loop score computations should use the batched `predict_global_batch`
-and `predict_shrunk_batch` functions, which call model.predict once per group
-rather than once per observation.  This gives 10-100x speedup for RF models.
+Global RF / OLS is fit on training groups (complement of S). Group-level
+history is the first ``tau`` outcomes. ``tau = 0`` → pure global.
 """
 
 import numpy as np
@@ -425,7 +413,7 @@ def create_mu_method_random_forest_residual_correction(
     ridge_alpha: float = 1.0,
     local_adjustment_clip: float | None = None,
 ):
-    """RF global mu with per-group residual correction on training indices."""
+    """RF + ridge residual correction. Not used in any paper table."""
     base = create_mu_method_random_forest(
         ntree=ntree, mtry=mtry, nodesize=nodesize,
         random_state=random_state, tau=0, c=0.5,
@@ -487,12 +475,7 @@ def create_mu_method_random_forest_local_rf_offset(
     """
     Global RF + within-group local RF (on X only), shrunk like the mean offset.
 
-    Replaces the constant group-mean correction with a RandomForest fit on the
-    group's training indices (first tau rows). Prediction is
-
-        w_g * μ_global(x,u) + (1 - w_g) * μ_local_RF(x)
-
-    with the same w_g = N_comp^c / (N_comp^c + tau) as the mean-shrinkage method.
+    Not used in any paper table.
     """
     base = create_mu_method_random_forest(
         ntree=ntree, mtry=mtry, nodesize=nodesize,

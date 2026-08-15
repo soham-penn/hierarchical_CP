@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """DGP Std-CP studentized vs absolute, same seeds / splits as the paper suite.
 
-The paper DGP Std-CP used absolute |Y-μ|. This regenerates the same test groups
-(8 workers, BASE_SEED+1000*worker_id) and evaluates both score types.
+Not a paper table itself; paper DGP Std-CP overlays use absolute |Y-μ|.
+This regenerates the same test groups (BASE_SEED+1000*chunk_id) and
+evaluates both score types.
 
 α=0.05 is a standalone draw (original suite). α∈{0.10,0.15,0.20} share one draw.
 """

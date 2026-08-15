@@ -1,6 +1,7 @@
 # ACS data and preprocessing
 
-Entry point for the paper ACS suite: `code/marginal/run_acs_yoep_fb_min21_permute.py`  
+Entry point for the paper ACS suite (Section 3.2): `code/marginal/run_section_3_2.py`
+(same as `code/marginal/run_acs_yoep_fb_min21_permute.py`).  
 Low-level runner: `code/marginal/run_acs_experiments.py`  
 Filters / design matrix: `real_data/acs/data_processing.py`
 

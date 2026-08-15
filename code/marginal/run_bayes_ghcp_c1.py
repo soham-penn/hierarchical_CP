@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""GHCP with Bayes E[Y|X,U] center, Eq.(4) weights c=1 (for oracle-vs-RF table)."""
+"""GHCP with Bayes E[Y|X,U] center, Eq.(4) weights c=1.
+
+Exploratory leftover (oracle-vs-RF extras). Not used for Section 3.1 RF figures.
+"""
 
 from __future__ import annotations
 
