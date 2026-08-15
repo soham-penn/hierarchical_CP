@@ -15,15 +15,16 @@ within-group training history.  The within-group mean is
 
 The shrinkage prediction for observation (x, u) in group j is
 
-  mu_hat(x, u | group j) = w_g * mu_global(x, u)  +  (1 - w_g) * mu_bar_j
+  mu_hat(x, u | group j) = (1 - λ_local) * mu_global(x, u)  +  λ_local * mu_bar_j
 
-where (manuscript Eq. (4) with λ = tau / (|Strain| + tau))
+where (paper Eq. (3) with λ_local = tau / (|Strain| + tau))
 
-  w_g = |S_comp|^c / (|S_comp|^c + tau)
+  λ_local = tau / (|S_comp|^c + tau)
+  w_g     = 1 - λ_local = |S_comp|^c / (|S_comp|^c + tau)
 
 and
   tau      : number of within-group training obs (= floor(o/2) in GHCP)
-  c        : exponent; default 1.0 matches Eq. (4)  (c=0.5 is the legacy sqrt rule)
+  c        : exponent; default 1.0 matches Eq. (3)
   |S_comp| : number of groups used to fit the global model (= |Strain|)
 
 When tau = 0 → pure global (no within-group history used).

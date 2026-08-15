@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 export HCP_PLOTS_MARGINAL="$ROOT/paper-results"
-export HCP_RESULTS_MARGINAL="$ROOT/paper-results/results_marginal"
+export HCP_RESULTS_MARGINAL="$ROOT/paper-results/results"
 LOG="$ROOT/paper-results/logs/suite.log"
 PY="$ROOT/.venv/bin/python"
 ACS_WORKERS=7
@@ -22,8 +22,8 @@ echo "===== ACS GHCP/HCP (skip Std-CP) $(date) ====="
   --alphas "$ALPHAS_ALL" \
   --B 1000 --n_workers "$ACS_WORKERS" --skip_stdcp --plot
 
-echo "===== ACS Std-CP studentized recompute $(date) ====="
-"$PY" -u code/marginal/recompute_acs_stdcp_studentized_min21.py \
+echo "===== ACS Std-CP studentized randomized recompute $(date) ====="
+"$PY" -u code/marginal/recompute_acs_stdcp_randomized_min21.py \
   --B 1000 --n_workers "$ACS_WORKERS" --alphas "$ALPHAS_ALL"
 
 echo "======== DONE $(date) ========"

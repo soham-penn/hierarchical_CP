@@ -5,9 +5,9 @@ YOEP+FB min21 with row permutation.
 Standard cohort filters (age 25–54, hours ≥ 40), min21 / target idx 20,
 o ∈ {0,5,10,15,20}, row permutation ON.
 
-Full suite (B=1000 default):
-  - α=0.2 and α=0.1, GHCP/HCP/baselines (use --skip_stdcp for fast runs)
-  - With Std-CP: studentized at all o (α=0.2) or o=20 only (α=0.1)
+Full suite (B=1000 default): α ∈ {0.05, 0.1, 0.15, 0.2}, GHCP/HCP/baselines.
+Use --skip_stdcp to skip Std-CP. When Std-CP is on: studentized at all o for
+α=0.2, and at o=20 only for α=0.1.
 """
 
 from __future__ import annotations
@@ -23,18 +23,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 from code.paths import PLOTS_MARGINAL  # noqa: E402
 
-SUITE_ROOT = PLOTS_MARGINAL / "acs" / "min21"
+SUITE_ROOT = PLOTS_MARGINAL / "acs"
 SEED = 456
 QUANTILE_BASE_SEED = 456
-RF_RESULTS = PLOTS_MARGINAL / "acs" / "rf" / "results"
+RF_RESULTS = SUITE_ROOT / "results"
 
 
 def _manifest(*, alphas: list[float], B: int, n_workers: int, full_stdcp: bool) -> dict:
     return {
-        "suite": "acs/min21",
+        "suite": "acs",
         "description": (
             "CA foreign-born YOEP>=2000, age 25–54, hours>=40; "
-            "uniform_one_target; row permutation ON; studentized Std-CP (RF local)"
+            "uniform_one_target; row permutation ON; studentized randomized Std-CP "
+            "(RF local, nodesize 5)"
         ),
         "seed": SEED,
         "quantile_base_seed": QUANTILE_BASE_SEED,
@@ -50,6 +51,7 @@ def _manifest(*, alphas: list[float], B: int, n_workers: int, full_stdcp: bool) 
         "alphas": alphas,
         "n_workers": n_workers,
         "predictor": "rf",
+        "rf_nodesize": 5,
         "within_group_mode": "mean",
         "score_type": "absolute",
         "stdcp_score_type": "studentized",
@@ -83,7 +85,7 @@ def _run_one(
     (SUITE_ROOT / "logs").mkdir(exist_ok=True)
 
     cmd = [
-        str(REPO_ROOT / ".venv" / "bin" / "python"),
+        sys.executable,
         "-u",
         str(REPO_ROOT / "code" / "marginal" / "run_acs_experiments.py"),
         "--predictor", "rf",
@@ -129,11 +131,14 @@ def _run_one(
         raise FileNotFoundError(f"No results dir matching *yoep2000_{tag} under {RF_RESULTS}")
     src = matches[0]
     dest_results = SUITE_ROOT / "results" / src.name
-    if dest_results.exists():
+    if src.resolve() != dest_results.resolve():
         import shutil
-        shutil.rmtree(dest_results)
-    src.rename(dest_results)
-    print(f"Moved {dest_results}", flush=True)
+        if dest_results.exists():
+            shutil.rmtree(dest_results)
+        src.rename(dest_results)
+        print(f"Moved {dest_results}", flush=True)
+    else:
+        print(f"Results already at {dest_results}", flush=True)
     return dest_results
 
 
@@ -158,7 +163,7 @@ def _plot(*, alphas: list[float]) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--alphas", default="0.2,0.1")
+    p.add_argument("--alphas", default="0.05,0.1,0.15,0.2")
     p.add_argument("--B", type=int, default=1000)
     p.add_argument("--n_workers", type=int, default=7)
     p.add_argument("--plot", action="store_true")

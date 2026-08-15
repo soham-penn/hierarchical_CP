@@ -3,10 +3,10 @@
 
 Canonical Simulations suite (paper):
   dgp_rf  — latent intercept γ=5, RF global μ, absolute residual score
-            plots → paper-results/dgp_true_marginal_rf/
-            raw   → paper-results/results_marginal/dgp/true_marg_latent_rf_gamma5p0_*
+            plots → paper-results/dgp/
+            raw   → paper-results/results/dgp/true_marg_latent_rf_gamma5p0_*
 
-ACS plotting wrappers remain available; the active real-data suite is `paper-results/acs/min21/`.
+ACS plotting wrappers remain available; the active real-data suite is `paper-results/acs/`.
 Alternate DGP suites (OLS, γ=0, studentized, capture, …) live under old/code/.
 """
 
@@ -108,7 +108,7 @@ def _append_stdcp_o_panels(
 def _build_dgp_rf() -> list[Path]:
     """Regenerate Simulations figures, summaries, and mean-width tables."""
     prefix = "true_marg_latent_rf_gamma5p0"
-    plot_subdir = "dgp_true_marginal_rf"
+    plot_subdir = "dgp"
     rf_label = "RF"
     _patch_dgp(prefix, plot_subdir)
     pm.reset_output_dirs()
@@ -224,7 +224,7 @@ def _build_dgp_rf() -> list[Path]:
         _export_tables()
     finally:
         sys.argv = _argv
-    tables = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "tables" / "simulations_mean_width_tables.tex"
+    tables = PLOTS_MARGINAL / "dgp" / "tables" / "simulations_mean_width_tables.tex"
     if tables.exists():
         outputs.append(tables)
     return outputs

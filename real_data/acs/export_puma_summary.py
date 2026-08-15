@@ -108,7 +108,7 @@ def main() -> None:
     parser.add_argument(
         "--out",
         type=Path,
-        default=REPO_ROOT / "real_data" / "acs" / "data" / "acs_ca_puma_summary_trim2.csv",
+        default=REPO_ROOT / "real_data" / "acs" / "data" / "acs_ca_puma_summary.csv",
     )
     args = parser.parse_args()
     out = export_puma_summary(

@@ -1,104 +1,97 @@
 # Paper results (canonical deliverable)
 
-All paper figures, tables, summaries, and the raw trial CSVs used to build them
-live **here**. Defaults in `code/paths.py` point at this directory.
+Figures, tables, summaries, and the raw trial CSVs used to build them live **here**.
+Defaults in `code/paths.py` point at this directory. Notation follows the paper
+(\(o\), \(\lambda_{\mathrm{local}}\), \(\eta\), \(\gamma\)).
 
 ```
 paper-results/
-├── README.md                      # this file
-├── dgp_true_marginal_rf/          # Simulations deliverable
-│   ├── figures/                   # PDFs cited in the paper
-│   ├── summaries/                 # trial / method summaries
-│   ├── tables/                    # LaTeX tables + section body
-│   ├── fixedN21_seeds_manifest.json
-│   ├── poissonNmean25_seeds_manifest.json
-│   └── README.md                  # section map + exact re-run commands
-├── results_marginal/
-│   └── dgp/                       # raw CSVs (B=1000 × α × o)
-│       ├── true_marg_latent_rf_gamma5p0_fixedN21_*
-│       ├── true_marg_latent_rf_gamma5p0_poissonNmean25_*
-│       └── _archive_poissonNmean21/   # legacy 1+Poi(20)
-├── acs/min21/                     # ACS paper suite
-└── logs/
-    ├── run_alg1_suite.sh          # full DGP + ACS re-run
-    └── run_alg1_resume.sh
+├── dgp/                       # Sec. 3.1 simulations (+ App. D.1–D.2 extras)
+│   ├── figures/
+│   ├── summaries/
+│   ├── tables/
+│   └── *_seeds_manifest.json
+├── results/dgp/               # raw CSVs (B=1000)
+│   ├── true_marg_latent_rf_gamma5p0_fixedN21_*
+│   ├── true_marg_latent_rf_gamma5p0_poissonNmean25_*
+│   ├── size_shift_*
+│   └── effect_of_weights_*
+├── acs/                       # Sec. 3.2 ACS (+ App. D.5)
+├── size_shift/                # App. D.3
+├── effect_of_weights/         # App. D.4
+└── logs/                      # suite scripts
 ```
 
-## What this suite is
+## GHCP as implemented (all suites)
 
-Algorithm-1–aligned GHCP with:
+Restricted GHCP, Algorithm 1, \(\eta=0.5\):
 
-1. **Strain:** \(\mathrm{Strain}=[K]\setminus S_\eta\) — donor rows never enter global training.
-2. **Merger:** Eq. (4) with \(c=1\): \(w_g=|\mathrm{Strain}|/(|\mathrm{Strain}|+\tau)\), \(\tau=\lfloor o/2\rfloor\).
-3. **\(S_\eta\) cardinality:** \(|S_\eta|=q_\eta+1\) so after donor removal
-   \(|\mathrm{Scal}|=q_\eta=\lceil(1-\eta)K\rceil\) (same calib size as HCP).
+- \(\tau=\lfloor o/2\rfloor\), \(\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)\) (paper (3), \(c=1\)).
+- RF 50 trees / min leaf 5, absolute residual, \(K=20\), \(B=1000\).
+- GHCP/HCP quantiles deterministic; Std-CP randomized + studentized (ACS).
 
-## Simulation designs
+## Main simulations (Sec. 3.1)
 
-| Config | Group sizes | Chunk size (RNG) | Notes |
-|--------|-------------|------------------|-------|
-| `fixedN21` | \(N_j\equiv 21\) | 125 | equal sizes |
-| `poissonNmean25` | \(N_j\sim\mathrm{Poi}(25)\) (reject 0) | 25 | **main Poisson** |
+| Config | Group sizes | Chunk size | Target index |
+|--------|-------------|------------|--------------|
+| `fixedN21` | \(N_j\equiv 21\) | 125 | 20 |
+| `poissonNmean25` | \(N_j\sim\mathrm{Poi}(25)\), redraw 0 | 25 | 35 |
 
-Shared: \(\gamma=5\), RF (50 trees, leaf 5), \(B=1000\), \(\alpha\in\{0.05,0.1,0.15,0.2\}\),
-`BASE_SEED=457`, chunk \(i\) → `np.random.seed(457 + 1000*i)`, RF `random_state=123`,
-deterministic GHCP/HCP quantiles (Std-CP randomized).
+Shared: \(\gamma=5\), \(U_j\sim\mathrm{Unif}([1,5]^5)\), \(\rho=0.5\),
+\(o\in\{0,5,10,15,20\}\), \(\alpha\in\{0.05,0.1,0.15,0.2\}\), `BASE_SEED=457`.
 
-## Reproduce from a clean clone
-
-Env vars are optional (defaults already target `paper-results/`):
+History always uses the **first \(o\)** observations of the test stream; the
+prediction target is a later index (20 or 35) held fixed across \(o\).
 
 ```bash
-cd /path/to/hierarchical_cp
-source .venv/bin/activate   # after pip install -r requirements.txt
-
-# 1) Re-run simulations (exact shipped CSVs; several hours)
 .venv/bin/python code/marginal/run_true_marginal_latent_intercept_rf_experiments.py \
-  --alphas 0.05,0.1,0.15,0.2 \
-  --gamma 5 \
+  --alphas 0.05,0.1,0.15,0.2 --gamma 5 \
   --configs fixedN21,poissonNmean25 \
-  --total_replicates 1000 \
-  --n_workers 8 \
-  --quantile-mode deterministic
+  --total_replicates 1000 --n_workers 8 --quantile-mode deterministic
 
-# 2) Figures + summaries + mean-width / baseline tables
 .venv/bin/python code/marginal/plot_paper.py --suite dgp_rf
 .venv/bin/python code/marginal/export_paper_tables_mean_width.py
 .venv/bin/python code/marginal/export_paper_tables_baselines.py
+```
 
-# 3) ACS (optional; separate wall time)
-.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py --B 1000 --n_workers 8 --plot
+Detail: [`dgp/README.md`](dgp/README.md).
+
+## ACS (Sec. 3.2)
+
+2018 ACS 1-year CA PUMS; foreign-born; YOEP \(\ge 2000\); age 25–54; hours \(\ge 40\);
+eligible PUMAs size \(\ge 21\). Target = **position 21** (index 20); permute rows
+within PUMA each replicate; \(K=20\) reference PUMAs + 1 test PUMA;
+\(\alpha\in\{0.05,0.1,0.15,0.2\}\).
+
+Prep + filter checklist: [`../real_data/acs/README.md`](../real_data/acs/README.md).
+Suite notes: [`acs/README.md`](acs/README.md).
+
+```bash
+.venv/bin/python real_data/acs/download_acs_ca_pums.py
+.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
+  --alphas 0.05,0.1,0.15,0.2 --B 1000 --n_workers 7 --skip_stdcp --plot
+.venv/bin/python code/marginal/recompute_acs_stdcp_randomized_min21.py \
+  --B 1000 --n_workers 7 --alphas 0.05,0.1,0.15,0.2
 .venv/bin/python code/marginal/plot_paper.py --suite acs
 ```
 
-Umbrella script (DGP + ACS):
+## Appendix D.3–D.4
 
 ```bash
-bash paper-results/logs/run_alg1_suite.sh
+# D.3 size-shift (Poi(25), γ=5, ξ∈{0,0.25,0.50,0.75})
+.venv/bin/python code/marginal/run_size_shift_sensitivity.py --B 1000 --n_workers 6
+.venv/bin/python code/marginal/plot_size_shift_sensitivity.py
+
+# D.4 weights, original DGP (γ=5)
+.venv/bin/python code/marginal/run_effect_of_weights.py --B 1000 --n_workers 6 --gamma 5
+.venv/bin/python code/marginal/plot_effect_of_weights.py --gamma 5
+
+# D.4 weights, narrow U_d, γ=0, RF + Bayes E[Y|X,U]
+.venv/bin/python code/marginal/run_effect_of_weights_ud_narrow.py --B 1000 --n_workers 6
+.venv/bin/python code/marginal/plot_effect_of_weights_ud_narrow.py
 ```
 
-**Plots only** (use shipped raw CSVs; no experiment re-run):
+Extra γ-grid (not in the paper appendix text): `--gamma 0.2` and `--gamma 0`.
 
-```bash
-.venv/bin/python code/marginal/plot_paper.py --suite dgp_rf
-.venv/bin/python code/marginal/plot_paper.py --suite acs
-```
-
-## Where to look first
-
-| Question | Open |
-|----------|------|
-| Simulation figure cited in the paper | `dgp_true_marginal_rf/figures/` |
-| Mean-width / coverage tables | `dgp_true_marginal_rf/tables/` |
-| Per-(α, o, method) summaries | `dgp_true_marginal_rf/summaries/` |
-| Exact seeds / chunk layout | `*_seeds_manifest.json` and `results_marginal/dgp/*/run_manifest.json` |
-| ACS coverage/width plots | `acs/min21/figures/` |
-| How to re-run DGP exactly | `dgp_true_marginal_rf/README.md` |
-
-## History of this folder
-
-| Former name | Status |
-|-------------|--------|
-| `new_plots_marginal/` | Renamed to **`paper-results/`** |
-| `plots_marginal/` | Moved to `old/plots_marginal/` |
-| `new_poisson_marginal/` | Scratch Poi(25) staging; moved to `old/new_poisson_marginal_scratch/` (contents merged here) |
+Umbrella scripts: `logs/run_alg1_suite.sh` (main DGP+ACS),
+`logs/run_appendix_sensitivity.sh` (D.3–D.4).

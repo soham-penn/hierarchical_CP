@@ -89,45 +89,15 @@ def _select_conformal_q(scores, weights, alpha, quantile_mode="deterministic",
     )
 
 
-def _select_s_tilde_with_tie_randomization(
-    N,
-    o_observed,
-    alpha_selection,
-    include_donor_slot=False,
-    rng=None,
-):
-    """
-    Select S_tilde (= S_η) with tie-aware randomization at the α_selection cutoff.
-
-    Target size when all groups have N > o, with n0 = ceil((1 - η) K):
-      |S_tilde| = n0           without donor slot  (baseline HCP)
-      |S_tilde| = n0 + 1       with donor slot     (GHCP experimental rule)
-
-    The manuscript Eq. (9) uses |S_η| = q_η = n0.  Empirically we keep the
-    GHCP donor-slot rule so that after removing J0 one still has
-    |Scal| = n0 retained calibration groups (matching HCP's calib size), rather
-    than |Scal| = n0 - 1.  Global training still follows Algorithm 1:
-    Strain = [K] \\ S_η (donor never enters Strain).
-
-    Selection prefers smaller groups (interior below the V_o cutoff, then the
-    V_o boundary with tie-breaking). If that is still short of n_target — which
-    happens with unequal sizes when only one group sits at V_o — fill from the
-    next-smallest eligible groups above V_o so |S_tilde| actually reaches the
-    target. Uses a fixed seed to keep this split reproducible.
-    """
+def _restricted_pool(N, o_observed, alpha_selection, n_sel, rng=None):
+    """Pick n_sel eligible groups by size, with randomization on the cutoff tie."""
     N = np.asarray(N, dtype=int)
     K = len(N)
     if K == 0:
         return np.array([], dtype=int)
 
-    def Fhat_N(t):
-        return np.mean(N <= t)
-
-    p = min(1.0, Fhat_N(o_observed) + (1 - alpha_selection))
-    N_sorted = np.sort(N)
-    idx_V = max(0, int(np.ceil(p * K)) - 1)
-    V_o = N_sorted[idx_V]
-
+    p = min(1.0, float(np.mean(N <= o_observed) + (1 - alpha_selection)))
+    V_o = np.sort(N)[max(0, int(np.ceil(p * K)) - 1)]
     eligible = np.where(N > o_observed)[0]
     if len(eligible) == 0:
         return eligible
@@ -135,81 +105,56 @@ def _select_s_tilde_with_tie_randomization(
     interior = eligible[N[eligible] < V_o]
     boundary = eligible[N[eligible] == V_o]
     exterior = eligible[N[eligible] > V_o]
-
-    n_target = int(np.ceil(p * K)) - int(np.sum(N <= o_observed))
-    if include_donor_slot:
-        n_target += 1
-    n_target = max(1, min(n_target, len(eligible)))
+    n_sel = max(1, min(int(n_sel), len(eligible)))
 
     if rng is None:
         rng = np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
 
     chosen: list[int] = []
-
-    # 1) smallest groups strictly below V_o
     if len(interior):
         order = np.argsort(N[interior], kind="stable")
         chosen.extend(interior[order].tolist())
-    if len(chosen) >= n_target:
-        return np.sort(np.asarray(chosen[:n_target], dtype=int))
+    if len(chosen) >= n_sel:
+        return np.sort(np.asarray(chosen[:n_sel], dtype=int))
 
-    # 2) tie-break among groups with size == V_o
-    need = n_target - len(chosen)
+    need = n_sel - len(chosen)
     if len(boundary):
         take = min(need, len(boundary))
         if take >= len(boundary):
             chosen.extend(boundary.tolist())
         else:
-            chosen.extend(rng.choice(boundary, size=take, replace=False).tolist())
-    if len(chosen) >= n_target:
-        return np.sort(np.asarray(chosen[:n_target], dtype=int))
+            pick = rng.choice(boundary, size=take, replace=False)
+            chosen.extend(np.asarray(pick, dtype=int).tolist())
+    if len(chosen) >= n_sel:
+        return np.sort(np.asarray(chosen[:n_sel], dtype=int))
 
-    # 3) fill remaining from next-smallest eligible groups above V_o
-    #    (needed for unequal sizes: interior+boundary often has capacity n0 only,
-    #    one short of n0+1 when the donor slot is requested).
-    need = n_target - len(chosen)
+    need = n_sel - len(chosen)
     if len(exterior) and need > 0:
         order = np.argsort(N[exterior], kind="stable")
         chosen.extend(exterior[order[:need]].tolist())
 
-    return np.sort(np.asarray(chosen[:n_target], dtype=int))
+    return np.sort(np.asarray(chosen[:n_sel], dtype=int))
+
+
+def _select_s_tilde_with_tie_randomization(N, o_observed, alpha_selection, rng=None):
+    """Restricted group pool for GHCP."""
+    N = np.asarray(N, dtype=int)
+    K = len(N)
+    p = min(1.0, float(np.mean(N <= o_observed) + (1 - alpha_selection)))
+    n_sel = int(np.ceil(p * K) - np.sum(N <= o_observed) + 1)
+    return _restricted_pool(N, o_observed, alpha_selection, n_sel, rng=rng)
 
 
 def get_hcp_train_cal_split(sample_sizes, o_observed, alpha_selection):
-    """
-    Build train/calibration group indices for baseline HCP (no donor removal).
-
-    Uses the same S_tilde selection logic as donor-HCP (with same seed) to ensure
-    both methods independently arrive at the same initial split, but HCP does NOT
-    remove a donor. This makes the methods independent while using compatible splits.
-
-    Parameters
-    ----------
-    sample_sizes : array-like
-        Sample sizes for each group
-    o_observed : int
-        Number of observed test-group observations (typically 0 for HCP)
-    alpha_selection : float
-        Selection parameter
-
-    Returns
-    -------
-    train_idx, calib_idx : lists
-        Training and calibration group indices (calib_idx = S_tilde, no donor removal)
-    """
+    """Train/calibration group indices for sample HCP."""
     N = np.asarray(sample_sizes, dtype=int)
     K = len(N)
     if K == 0:
         return [], []
 
-    # Use same selection logic as donor-HCP, but WITHOUT the donor slot
-    # This ensures HCP independently gets S_tilde without donor removal
-    S_tilde = _select_s_tilde_with_tie_randomization(
-        N=N,
-        o_observed=o_observed,
-        alpha_selection=alpha_selection,
-        include_donor_slot=False,  # HCP doesn't need donor slot
-    )
+    p = min(1.0, float(np.mean(N <= o_observed) + (1 - alpha_selection)))
+    n_sel = int(np.ceil(p * K) - np.sum(N <= o_observed))
+    S_tilde = _restricted_pool(N, o_observed, alpha_selection, n_sel)
 
     if len(S_tilde) == 0:
         K0 = K // 2
@@ -222,12 +167,7 @@ def get_hcp_train_cal_split(sample_sizes, o_observed, alpha_selection):
 
 
 def get_donor_style_train_cal_split(sample_sizes, o_observed, alpha_selection):
-    """
-    Build train/calibration group indices matching Algorithm 1.
-
-    Strain = [K] \\ S_η (excludes the entire restricted pool, including the
-    eventual donor). Scal = S_η \\ {J0}. The donor index is in neither set.
-    """
+    """Train/calibration group indices for GHCP."""
     N = np.asarray(sample_sizes, dtype=int)
     K = len(N)
     if K == 0:
@@ -237,7 +177,6 @@ def get_donor_style_train_cal_split(sample_sizes, o_observed, alpha_selection):
         N=N,
         o_observed=o_observed,
         alpha_selection=alpha_selection,
-        include_donor_slot=True,
     )
 
     if len(S_tilde) == 0:
@@ -247,7 +186,6 @@ def get_donor_style_train_cal_split(sample_sizes, o_observed, alpha_selection):
     rng = np.random.default_rng(_ALPHA_SPLIT_TIEBREAK_SEED)
     donor = int(rng.choice(S_tilde))
     calib_idx = np.setdiff1d(S_tilde, [donor]).astype(int)
-    # Algorithm 1: Strain = [K] \ S_η (donor stays in S_η, never trained on).
     train_idx = np.setdiff1d(np.arange(K, dtype=int), S_tilde).astype(int)
 
     return train_idx.tolist(), calib_idx.tolist()
@@ -430,14 +368,11 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
     if N_test < max(o_observed + 1, test_index_target + 1):
         raise ValueError("compute_donor_hcp_randomized_interval: Z_test must have at least max(o+1, target+1) observations.")
 
-    # Experimental |S_η|=q_η+1 (donor slot); Strain = [K] \ S_η before donor draw.
     S_tilde = _select_s_tilde_with_tie_randomization(
         N=N,
         o_observed=o_observed,
         alpha_selection=alpha_selection,
-        include_donor_slot=True,
     )
-    # Fit global on Strain before / independent of donor choice.
     S_comp = np.setdiff1d(np.arange(K, dtype=int), S_tilde)
 
     if len(S_tilde) == 0:
@@ -541,7 +476,6 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
         global_model = None
         scale_model = None
     else:
-        # Train only on reference groups outside S_η (never on donor or test).
         global_model = mu_method['fit_global'](
             U_matrix=U_calibration,
             Z_list=Z_calibration,
@@ -870,7 +804,6 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
         N=N,
         o_observed=o_observed,
         alpha_selection=alpha_selection,
-        include_donor_slot=True,
     )
 
     if len(S_tilde) == 0:
@@ -888,7 +821,6 @@ def compute_donor_hcp_derandomized_interval(U_calibration, Z_calibration, U_test
     Z_all = Z_calibration + [Z_test]
 
     S = np.sort(np.concatenate([S_tilde, [test_idx]]))
-    # Algorithm 1: Strain = [K] \ S_η (never train on S_η / donor groups).
     S_comp = np.setdiff1d(np.arange(K, dtype=int), S_tilde)
 
     if len(S_comp) == 0:

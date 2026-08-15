@@ -1,0 +1,57 @@
+\subsection{Added baselines for the experiment in Section~\ref{subsec:main-simulations}}
+\label{appsubsec:added-baselines}
+
+Here, we compare GHCP with additional baseline methods under the simulation
+settings of Section~\ref{subsec:main-simulations}. The data are generated
+exactly as in the main simulation with $K=20$, $\gamma=5$, and $\alpha=0.1$.
+We consider the fixed-size design of Figure~\ref{fig:N21-cov-width-20}
+($N_j\equiv 21$) and the Poisson group-size design of
+Figure~\ref{fig:poi-cov-width-20}
+($N_j\overset{\mathrm{i.i.d.}}{\sim}\mathrm{Poi}(25)$). In both cases, we compare
+\begin{enumerate}[label=(\roman*)]
+    \item GHCP, using Algorithm~\ref{alg:dhcp} with the restricted donor rule
+    $\eta=0.5$;
+    \item HCP~\citep{lee2023distribution};
+    \item Pooling CDFs, Subsampling Once, and Repeated Subsampling
+    \citep{dunn2022distribution}.
+\end{enumerate}
+
+\paragraph{Fixed group sizes.}
+Figure~\ref{fig:width-append-dhcp-fixed} shows the empirical coverage and width
+across $B=1000$ simulation repetitions for the fixed-size setting, and
+Table~\ref{tab:dhcp-hcp-alpha01-extra} gives the corresponding numerical
+summary. The main qualitative message is the same as in the main text: GHCP
+maintains coverage while its width decreases substantially as the initial
+test-group sample size $o$ grows. The baseline procedures from
+\citet{dunn2022distribution} are less conservative than HCP but do not use the
+observed test-group data, so their widths remain essentially unchanged across
+$o$.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\linewidth]{paper-results/dgp/figures/fixedN21_alpha0p1_all_baselines_coverage_width_by_o.pdf}
+    \caption{Empirical coverage and width for GHCP with
+    $o\in\{0,5,10,15,20\}$ and the baseline procedures, under $K=20$,
+    $N_j\equiv 21$, $\gamma=5$, and $\alpha=0.1$.}
+    \label{fig:width-append-dhcp-fixed}
+\end{figure}
+
+\paragraph{Poisson group sizes.}
+We repeat the comparison under the Poisson group-size design of
+Figure~\ref{fig:poi-cov-width-20}. Figure~\ref{fig:width-append-dhcp-poisson}
+and Table~\ref{tab:dhcp-hcp-poisson-alpha01-extra} report the corresponding
+coverage and width summaries. The qualitative pattern matches the fixed-size
+case: GHCP reduces width as $o$ increases while maintaining coverage near the
+nominal level, whereas the Dunn et al.\ baselines remain insensitive to $o$.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\linewidth]{paper-results/dgp/figures/poisson_alpha0p1_all_baselines_coverage_width_by_o.pdf}
+    \caption{Empirical coverage and width for GHCP with
+    $o\in\{0,5,10,15,20\}$ and the baseline procedures, under $K=20$,
+    $N_j\overset{\mathrm{i.i.d.}}{\sim}\mathrm{Poi}(25)$, $\gamma=5$, and
+    $\alpha=0.1$.}
+    \label{fig:width-append-dhcp-poisson}
+\end{figure}
+
+\input{paper-results/dgp/tables/simulations_added_baselines_tables.tex}

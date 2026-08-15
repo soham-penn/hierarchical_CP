@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Export paper Simulation tables (mean width) from dgp_true_marginal_rf summaries.
+Export paper Simulation tables (mean width) from dgp summaries.
 
-Source experiment (exact match to previous median-width paper numbers):
-  paper-results/dgp_true_marginal_rf/summaries/*_summary_by_alpha_o_method.csv
+Source experiment:
+  paper-results/dgp/summaries/*_summary_by_alpha_o_method.csv
   B=1000 true-marginal RF replicates, absolute score, latent intercept γ=5.
 
 Width entries use width_mean; SEs are the existing width_se (finite-width sample SE).
@@ -27,8 +27,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from code.paths import PLOTS_MARGINAL  # noqa: E402
 
-DEFAULT_SUMMARY_DIR = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "summaries"
-DEFAULT_OUT_DIR = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "tables"
+DEFAULT_SUMMARY_DIR = PLOTS_MARGINAL / "dgp" / "summaries"
+DEFAULT_OUT_DIR = PLOTS_MARGINAL / "dgp" / "tables"
 POISSON_DATASET = os.environ.get("HCP_POISSON_DATASET", "poissonNmean25")
 
 O_PAPER = [0, 5, 10, 15, 20]
@@ -270,7 +270,7 @@ def main() -> None:
     )
 
     parts = [
-        "% Source: paper-results/dgp_true_marginal_rf/summaries/",
+        "% Source: paper-results/dgp/summaries/",
         "",
         reduction_notes(fixed, poisson),
         build_ghcp_hcp_table(

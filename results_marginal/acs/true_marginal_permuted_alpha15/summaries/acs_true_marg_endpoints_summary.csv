@@ -1,3 +1,0 @@
-method,o,lower_income,upper_income,width_income,note
-Pooled-Income-Quantile,global,15000.0,166975.00000000035,151975.00000000035,
-Donor-HCP,20,25573.697395387862,186530.69963548784,160957.00224009997,medians over replicates

@@ -215,7 +215,8 @@ def _acs_paper_suite_subdir(
             return "rf_2012_residual"
         if int(yoep_min_year) != 2012:
             if no_income_filters:
-                return "rf"
+                # Paper ACS suite lives at paper-results/acs/results (not acs/rf/).
+                return "."
         if (
             within_group
             and drop_top_income_fraction > 0
@@ -245,7 +246,10 @@ def _acs_output_dir(
     score_type: str = "absolute",
     stdcp_score_type: str | None = None,
 ) -> Path:
-    """Write ACS artifacts under paper-results/acs/{suite}/results/ when on income scale."""
+    """Write ACS artifacts under paper-results/acs/{suite}/results/.
+
+    Paper RF YOEP≥2000 no-trim runs use suite "." → paper-results/acs/results/.
+    """
     run_tag = _result_dir_name(
         permuted=permuted,
         alpha_str=alpha_str,
@@ -1488,7 +1492,7 @@ def run_one_replicate(df, X, eligible_groups, strata, group_col, o_values, confi
     ]
     U_calibration_full = np.zeros((K_calib, 1))
 
-    # HCP baselines: S_tilde selection without donor slot (full S_tilde for calibration)
+    # HCP train/cal split
     sample_sizes = [len(Z_calibration_full[j]) for j in range(K_calib)]
     train_idx, calib_idx = get_hcp_train_cal_split(
         sample_sizes=sample_sizes,

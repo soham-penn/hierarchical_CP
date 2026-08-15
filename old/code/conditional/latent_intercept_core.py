@@ -254,7 +254,6 @@ def _compute_donor_hcp_interval_with_local(
         N=N,
         o_observed=o_observed,
         alpha_selection=alpha_selection,
-        include_donor_slot=True,
     )
 
     if len(S_tilde) == 0:

@@ -39,7 +39,6 @@ SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[2]
 REAL_DATA_DIR = REPO_ROOT / "real_data"
 DEFAULT_ACS_CSV = REAL_DATA_DIR / "acs" / "data" / "acs_data_all50states.csv"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "paper-results" / "acs" / "min21" / "diagnostics"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -47,10 +46,13 @@ if str(REAL_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(REAL_DATA_DIR))
 
 from acs.data_processing import build_design_matrix_acs, load_and_clean_acs_pums  # noqa: E402
+from code.paths import PLOTS_MARGINAL  # noqa: E402
 from methods.mu_methods import (  # noqa: E402
     create_mu_method_ols_global_only,
     create_mu_method_random_forest_global_only,
 )
+
+DEFAULT_OUTPUT_DIR = PLOTS_MARGINAL / "acs" / "diagnostics"
 
 # Match run_acs_experiments.py RF defaults.
 RF_NTREE = 50

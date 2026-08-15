@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Recompute ACS min21 Std-CP with randomized conformal quantiles (same seeds).
+"""Recompute ACS Std-CP with randomized conformal quantiles (same seeds).
 
-Uses studentized local RF scores (paper setting). At small o, deterministic
-quantiles are always infinite; randomization can yield finite radii with
-positive probability while targeting exact marginal coverage 1-α.
+Uses studentized local RF scores, nodesize 5 (paper setting). At small o,
+deterministic quantiles are always infinite; randomization can yield finite
+radii with positive probability while targeting exact marginal coverage 1-α.
 
-Patches Std-CP rows into paper-results/acs/min21 results and regenerates
-paper plots. Does not re-run GHCP/HCP.
+Patches Std-CP rows into paper-results/acs/results and regenerates paper
+plots. Does not re-run GHCP/HCP.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -30,8 +29,7 @@ from code.marginal import run_acs_experiments as acs
 from code.paths import PLOTS_MARGINAL
 from scores import make_quantile_seed
 
-SUITE_ROOT = PLOTS_MARGINAL / "acs" / "min21"
-OUT_ROOT = SUITE_ROOT / "stdcp_studentized_randomized"
+SUITE_ROOT = PLOTS_MARGINAL / "acs"
 SEED = 456
 QUANTILE_BASE_SEED = 456
 O_VALUES = [0, 5, 10, 15, 20]
@@ -169,7 +167,7 @@ def _result_dir_for_alpha(alpha: float) -> Path:
 
 def run_alpha(alpha: float, B: int, n_workers: int) -> Path:
     tag = f"alpha{int(round(alpha * 100)):02d}"
-    out_dir = OUT_ROOT / tag
+    out_dir = _result_dir_for_alpha(alpha)
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"\n=== Std-CP randomized studentized {tag} B={B} workers={n_workers} ===", flush=True)
 
@@ -263,26 +261,6 @@ def main() -> None:
     p.add_argument("--skip_patch", action="store_true")
     args = p.parse_args()
     alphas = [float(x) for x in args.alphas.split(",") if x.strip()]
-
-    OUT_ROOT.mkdir(parents=True, exist_ok=True)
-    man = {
-        "suite": "acs/min21/stdcp_studentized_randomized",
-        "seed": SEED,
-        "quantile_base_seed": QUANTILE_BASE_SEED,
-        "stdcp_score_type": SCORE_TYPE,
-        "quantile_mode": QUANTILE_MODE,
-        "stdcp_center": "local",
-        "half_split": "random half of first o target-PUMA rows (train), other half (cal)",
-        "selection_seed_formula": "seed + replicate_idx * 1009",
-        "row_permutation_seed_formula": "seed + replicate_idx * 1009 + 811",
-        "stdcp_split_seed": "make_quantile_seed(..., 'stdcp_split')",
-        "B": args.B,
-        "alphas": alphas,
-        "o_values": O_VALUES,
-        "permute_rows": True,
-    }
-    (OUT_ROOT / "seeds_manifest.json").write_text(json.dumps(man, indent=2))
-    print(f"Wrote {OUT_ROOT / 'seeds_manifest.json'}", flush=True)
 
     global _DF, _X, _ELIGIBLE, _GROUP_COUNTS
     print("Loading paper cohort...")

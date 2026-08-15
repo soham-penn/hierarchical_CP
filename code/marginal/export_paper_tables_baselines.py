@@ -3,7 +3,7 @@
 Export appendix baseline-comparison tables (GHCP + Dunn et al. baselines).
 
 Reads raw DGP result CSVs (same source as plot_engine baseline panels):
-  results_marginal/dgp/true_marg_latent_rf_gamma5p0_{fixedN21,poissonNmean25}_alpha10/
+  results/dgp/true_marg_latent_rf_gamma5p0_{fixedN21,poissonNmean25}_alpha10/
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from code.paths import PLOTS_MARGINAL, RESULTS_DGP_MARGINAL  # noqa: E402
 
-DEFAULT_OUT_DIR = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "tables"
+DEFAULT_OUT_DIR = PLOTS_MARGINAL / "dgp" / "tables"
 POISSON_DATASET = os.environ.get("HCP_POISSON_DATASET", "poissonNmean25")
 
 RAW_FILES = {
@@ -149,7 +149,7 @@ def main() -> None:
     )
 
     parts = [
-        "% Source: results_marginal/dgp/true_marg_latent_rf_gamma5p0_*_alpha10 raw CSVs",
+        "% Source: results/dgp/true_marg_latent_rf_gamma5p0_*_alpha10 raw CSVs",
         "",
         build_table(
             fixed,

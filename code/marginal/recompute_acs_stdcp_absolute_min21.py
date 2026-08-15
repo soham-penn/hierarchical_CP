@@ -2,7 +2,7 @@
 """ACS min21 Std-CP with absolute residual scores, same seeds as studentized.
 
 Does not patch the paper suite (studentized Std-CP stays in place).
-Writes to paper-results/acs/min21/stdcp_absolute/.
+Writes to paper-results/acs/stdcp_absolute/.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from code.marginal import run_acs_experiments as acs
 from code.paths import PLOTS_MARGINAL
 from scores import make_quantile_seed
 
-SUITE_ROOT = PLOTS_MARGINAL / "acs" / "min21"
+SUITE_ROOT = PLOTS_MARGINAL / "acs"
 OUT_ROOT = SUITE_ROOT / "stdcp_absolute"
 SEED = 456
 QUANTILE_BASE_SEED = 456
@@ -184,7 +184,7 @@ def main() -> None:
 
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     man = {
-        "suite": "acs/min21/stdcp_absolute",
+        "suite": "acs/stdcp_absolute",
         "seed": SEED,
         "quantile_base_seed": QUANTILE_BASE_SEED,
         "stdcp_score_type": SCORE_TYPE,

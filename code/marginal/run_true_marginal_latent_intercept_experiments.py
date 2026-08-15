@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import code.shared.dgp.experiments as exp_mod
 from code.shared.dgp.experiments import run_experiments_outer
 from code.shared.plot_engine import PAPER_ALPHA_GRID_STR
+from code.paths import RESULTS_DGP_MARGINAL
 from methods import create_mu_method_ols_global_only, create_mu_method_ols_offset
 
 N_WORKERS = 5
@@ -40,6 +41,17 @@ def alpha_to_tag(alpha: float) -> str:
 
 def gamma_tag(gamma: float) -> str:
     return f"gamma{str(float(gamma)).replace('.', 'p')}"
+
+
+def size_coupled_intercept(gamma, xi, m, eps, mean_m=25.0):
+    """Latent intercept with Corr(B, M) = xi and Var(B) = gamma^2."""
+    xi = float(xi)
+    if xi < 0.0 or xi >= 1.0:
+        raise ValueError(f"xi must be in [0, 1), got {xi}")
+    sd_m = float(np.sqrt(mean_m))
+    return float(gamma) * (
+        np.sqrt(1.0 - xi * xi) * float(eps) + xi * (float(m) - float(mean_m)) / sd_m
+    )
 
 
 def draw_group_latent_intercept(u_vec, n_obs, b_j, rho):
@@ -246,7 +258,7 @@ def run_chunk(worker_id, number_experiments_chunk, experiment_offset, config):
 
 def run_experiment(config_name, config):
     tag = f"true_marg_latent_{gamma_tag(config['gamma'])}_{config_name}"
-    out_dir = PROJECT_ROOT / "results_marginal" / "dgp" / tag
+    out_dir = RESULTS_DGP_MARGINAL / tag
     chunk_dir = out_dir / "chunks"
     out_dir.mkdir(parents=True, exist_ok=True)
     chunk_dir.mkdir(parents=True, exist_ok=True)

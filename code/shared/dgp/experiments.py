@@ -681,7 +681,7 @@ def run_one_experiment_conditional(
     Z_cal = cal['Z_calibration']
 
     # ------------------------------------------------------------------
-    # 2. Train / calib split (HCP uses independent split without donor removal)
+    # 2. Train / calib split
     # ------------------------------------------------------------------
     sample_sizes = [len(zg) for zg in Z_cal]
     train_idx, calib_idx = get_hcp_train_cal_split(

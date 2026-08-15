@@ -20,8 +20,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from code.paths import PLOTS_MARGINAL, RESULTS_DGP_MARGINAL
 
-FIG_DIR = PLOTS_MARGINAL / "stdcp_score_compare" / "figures"
-SUM_DIR = PLOTS_MARGINAL / "stdcp_score_compare" / "summaries"
+FIG_DIR = PLOTS_MARGINAL / "dgp" / "stdcp_score_compare" / "figures"
+SUM_DIR = PLOTS_MARGINAL / "dgp" / "stdcp_score_compare" / "summaries"
 O_FOCUS = [0, 5, 10, 15, 20]
 
 
@@ -73,7 +73,6 @@ def _load_acs_stud(alpha: float) -> pd.DataFrame:
     p = (
         PLOTS_MARGINAL
         / "acs"
-        / "min21"
         / "stdcp_studentized"
         / tag
         / f"stdcp_studentized_{tag}_detailed.csv"
@@ -91,7 +90,6 @@ def _load_acs_abs(alpha: float) -> pd.DataFrame:
     p = (
         PLOTS_MARGINAL
         / "acs"
-        / "min21"
         / "stdcp_absolute"
         / tag
         / f"stdcp_absolute_{tag}_detailed.csv"
@@ -219,7 +217,7 @@ def main():
             print(piv.round(3).to_string())
         _plot_compare(
             acs_sum,
-            "ACS min21",
+            "ACS",
             FIG_DIR / "acs_stdcp_abs_vs_stud.pdf",
             width_scale=1000.0,
         )

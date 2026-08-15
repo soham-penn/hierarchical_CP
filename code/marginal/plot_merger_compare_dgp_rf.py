@@ -122,8 +122,8 @@ def main():
     pct = f"{100.0 * float(args.alpha):.6g}".replace(".", "p")
     alpha_tag = f"alpha{pct}"
     gtag = f"gamma{str(float(args.gamma)).replace('.', 'p')}"
-    fig_dir = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "figures" / "merger_compare"
-    sum_dir = PLOTS_MARGINAL / "dgp_true_marginal_rf" / "summaries" / "merger_compare"
+    fig_dir = PLOTS_MARGINAL / "dgp" / "figures" / "merger_compare"
+    sum_dir = PLOTS_MARGINAL / "dgp" / "summaries" / "merger_compare"
     fig_dir.mkdir(parents=True, exist_ok=True)
     sum_dir.mkdir(parents=True, exist_ok=True)
 

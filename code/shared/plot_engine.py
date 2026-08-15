@@ -36,7 +36,7 @@ from code.paths import PLOTS_MARGINAL, RESULTS_DGP_MARGINAL  # noqa: E402
 
 RESULTS_ROOT = RESULTS_DGP_MARGINAL
 PAPER_PARENT = PLOTS_MARGINAL
-PAPER_ROOT = PAPER_PARENT / "dgp_true_marginal_rf"
+PAPER_ROOT = PAPER_PARENT / "dgp"
 FIG_DIR = PAPER_ROOT / "figures"
 SUMMARY_DIR = PAPER_ROOT / "summaries"
 
@@ -48,7 +48,7 @@ FIXED_NOMINAL_O_VALUES = [0, 10, 20]
 FIXED_ALPHA_PANEL_VALUES = [0.05, 0.10]
 ALPHA_FOR_WITHIN_COMPARISON = 0.1
 NOMINAL_COVERAGE_MAX = 0.90
-# Full miscoverage grid used for coverage_lines_width_boxplots (matches dgp_true_marginal_rf results).
+# Full miscoverage grid used for coverage_lines_width_boxplots.
 PAPER_ALPHA_GRID = [0.05, 0.075, 0.10, 0.125, 0.15, 0.175, 0.20, 0.225, 0.25]
 PAPER_ALPHA_GRID_STR = ",".join(str(a) for a in PAPER_ALPHA_GRID)
 STABILITY_ALPHAS = [0.20, 0.15, 0.10]
@@ -231,8 +231,8 @@ def _plot_tag(alpha: float) -> str:
 
 
 def _raw_files(dataset: str) -> list[Path]:
-    """Load raw result CSVs from results_marginal/dgp."""
-    search_roots = [REPO_ROOT / "results_marginal" / "dgp"]
+    """Load raw result CSVs from paper-results/results/dgp."""
+    search_roots = [RESULTS_DGP_MARGINAL, REPO_ROOT / "results" / "dgp"]
     by_alpha: dict[float, Path] = {}
     for root in search_roots:
         if not root.exists():
@@ -244,7 +244,7 @@ def _raw_files(dataset: str) -> list[Path]:
     files = [by_alpha[a] for a in sorted(by_alpha)]
     if not files:
         raise FileNotFoundError(
-            f"No alpha-grid raw files found for {dataset} under results_marginal/dgp"
+            f"No alpha-grid raw files found for {dataset} under paper-results/results/dgp"
         )
     return files
 
@@ -1594,13 +1594,12 @@ def plot_dhcp_shcp_hcp_by_o(
 
 def load_stability_summary(dataset: str) -> pd.DataFrame:
     candidates = [
-        REPO_ROOT / "results_marginal" / "dgp" / f"true_marg_{dataset}_randomization_stability_summary.csv",
-        REPO_ROOT / "results_marginal" / "dgp" / f"true_marg_{dataset}_randomization_stability_summary.csv",
+        RESULTS_DGP_MARGINAL / f"true_marg_{dataset}_randomization_stability_summary.csv",
     ]
     path = next((p for p in candidates if p.exists()), None)
     if path is None:
         raise FileNotFoundError(
-            f"Missing randomization stability summary for {dataset} under results_marginal/dgp"
+            f"Missing randomization stability summary for {dataset} under paper-results/results/dgp"
         )
     df = pd.read_csv(path)
     df = df[df["o"].isin(O_VALUES)].copy()

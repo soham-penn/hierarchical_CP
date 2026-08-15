@@ -1,10 +1,9 @@
 """Hierarchical conformal prediction methods.
 
-Modules:
-  - mu_methods: RF / OLS global predictors (optional within-group offset)
+  - donor_hcp: GHCP (paper Algorithm 1; restricted donor pool, η)
   - baseline_hcp: HCP, pooling, subsampling, repeated subsampling
-  - donor_hcp: donor-HCP (GHCP) randomized and derandomized
-  - sample_hcp: sample-HCP randomized and derandomized
+  - mu_methods: RF / OLS / Bayes; merger paper (3)
+  - sample_hcp: sample-HCP
 """
 
 from .mu_methods import (

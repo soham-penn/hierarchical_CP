@@ -1,41 +1,58 @@
 # Archived / non-final artifacts
 
-**Active paper deliverable:** [`paper-results/`](../paper-results/README.md)
+**Keep live:** [`paper-results/`](../paper-results/README.md) (Sec. 3.1–3.2 + App. D.3–D.4), [`real_data/acs/`](../real_data/acs/README.md), and `code/`. Nothing under `old/` is required to reproduce the paper figures.
 
-- Simulations: `paper-results/dgp_true_marginal_rf/`
-- ACS: `paper-results/acs/min21/`
-- Raw DGP CSVs: `paper-results/results_marginal/dgp/`
+## Layout
 
-## Keep (not archived — live under repo root / `paper-results/`)
+```
+old/
+├── README.md                 # this file
+├── code/                     # superseded runners / capture / conditional drivers
+│   ├── acs_capture/
+│   ├── dgp_capture/
+│   ├── conditional/
+│   └── marginal/             # alt ACS launchers (min31, yoep extended, …)
+├── real_data/                # superseded real-data experiments
+│   ├── acs/                  # old ACS plots/results/diagnostics variants
+│   ├── blood_pressure/       # BP clinic study (not in paper)
+│   └── scripts/              # bootstrap / stratified / early true-marginal runners
+├── dgp/                      # archived simulation plot/result trees
+│   ├── plots_marginal/       # pre–paper-results plot tree
+│   ├── plots_marginal_archives/
+│   ├── results_marginal_dgp_old/
+│   ├── new_poisson_marginal_scratch/
+│   ├── capture_data/         # frozen-μ capture dumps
+│   └── median_era/           # pre–mean-width RF figures
+├── conditional/              # conditional-calibration experiments
+│   ├── plots/
+│   └── results/
+└── diagnostics/              # ad-hoc DGP/ACS diagnostic scratch
+```
+
+## Keep live (not archived)
 
 | Path | Role |
 |------|------|
 | `paper-results/` | Canonical figures, tables, summaries, ACS suite, nested raw CSVs |
 | `code/marginal/run_true_marginal_latent_intercept_rf_experiments.py` | Paper DGP runner |
-| `code/marginal/run_true_marginal_latent_intercept_experiments.py` | Shared latent-intercept helpers |
 | `code/marginal/plot_paper.py` | Active suites: `dgp_rf`, `acs`, … |
-| `code/marginal/export_paper_tables_mean_width.py` | Mean-width LaTeX tables |
-| `code/shared/dgp/`, `code/shared/plot_engine.py`, `methods/`, `scores.py` | Core used by the paper suite |
 | `code/marginal/run_acs_experiments.py` | Core ACS runner |
 | `code/marginal/run_acs_yoep_fb_min21_permute.py` | Paper ACS launcher |
+| `real_data/acs/` | ACS download, cleaning, paper plotter, size-ignorability diagnostics |
 | `code/paths.py` | Defaults → `paper-results/` |
 
-## Contents of `old/`
+## What moved out of live `real_data/`
 
-| Path | What |
-|------|------|
-| `plots_marginal/` | Former top-level plot tree (pre–`paper-results` rename) |
-| `new_poisson_marginal_scratch/` | Temporary Poi(25) staging dir; results merged into `paper-results/` |
-| `plots_marginal_archives/` | Even older `plots_marginal/old/` dumps |
-| `code/` | Archived runners (capture, conditional, alt ACS drivers, …) |
-| `results_conditional/`, `plots_conditional/` | Conditional-calibration experiments |
-| `results_marginal_dgp_old/` | Former `results_marginal/dgp/old/` |
-| `dgp_true_marginal_rf_median_era/` | Pre–mean-width RF figures |
-| `dgp_true_marginal_rf_capture_data/` | Intermediate capture dumps |
-| `diagnostics/` | Ad-hoc diagnostics |
+| Former path | Now |
+|-------------|-----|
+| `real_data/blood_pressure/` | `old/real_data/blood_pressure/` |
+| `real_data/repeated_experiments*.py`, `acs_true_marginal_experiments.py`, `plot_results.py` | `old/real_data/scripts/` |
+| `real_data/acs/results/`, `acs/plots/` | `old/real_data/acs/legacy_local/` |
+| `real_data/acs/data/acs_top25_filtered.csv`, `acs_ca_puma_summary_trim2.csv` | `old/real_data/acs/data/` |
 
 Regenerate final DGP plots/tables from shipped CSVs:
 
 ```bash
 .venv/bin/python code/marginal/plot_paper.py --suite dgp_rf
+.venv/bin/python code/marginal/plot_paper.py --suite acs
 ```

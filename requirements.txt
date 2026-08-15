@@ -1,6 +1,7 @@
-numpy
-pandas
-scikit-learn
-matplotlib
-folktables
-xgboost
+# Versions used to produce the shipped paper-results (Python 3.13.1).
+numpy==2.4.6
+pandas==3.0.3
+scikit-learn==1.8.0
+matplotlib==3.10.9
+folktables==0.0.12
+xgboost==3.2.0

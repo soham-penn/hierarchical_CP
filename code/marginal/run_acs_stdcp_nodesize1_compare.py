@@ -21,7 +21,7 @@ SEED = 456
 QSEED = 456
 TARGET = 20
 O_VALUES = [0, 5, 10, 15, 20]
-OUT = Path("paper-results/acs/min21/stdcp_nodesize1")
+OUT = Path("paper-results/acs/stdcp_nodesize1")
 NODE = 1
 
 _DF = _X = _ELIG = _CNT = None
@@ -166,9 +166,11 @@ def main():
         ab = pd.read_csv(OUT / tag / f"stdcp_ns1_absolute_{tag}_detailed.csv")
         st = pd.read_csv(OUT / tag / f"stdcp_ns1_studentized_{tag}_detailed.csv")
         paper = pd.read_csv(
-            f"paper-results/acs/min21/stdcp_studentized/{tag}/"
-            f"stdcp_studentized_{tag}_detailed.csv"
+            f"paper-results/acs/results/"
+            f"true_marginal_permuted_rf_income_notrim_yoep2000_{tag}/"
+            f"acs_true_marg_{tag}_detailed.csv"
         )
+        paper = paper[paper["method"].astype(str) == "Std-CP"]
         for o in O_VALUES:
             for name, g in (
                 ("abs_ns1", ab[ab.o == o]),

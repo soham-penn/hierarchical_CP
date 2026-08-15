@@ -1,78 +1,63 @@
-# ACS real-data experiments (paper)
+# ACS real-data experiments (paper Sec. 3.2)
 
-California ACS PUMS income prediction with donor-HCP (GHCP), sample-HCP, and conformal baselines.
+California ACS PUMS income prediction with GHCP (Algorithm 1, \(\eta=0.5\)), HCP, and conformal baselines.
 
-**Interpretation:** This is an **empirical illustration** under the paper's working
-model, not evidence that the theoretical size-ignorability assumption holds in
-ACS. See `min21/diagnostics/` for PUMA-size vs group-summary checks.
+**Interpretation:** empirical illustration under the paper working model, not a test that Assumption A2 holds. See `diagnostics/`.
 
-Cohort filters, variable recodings, and the full reproducibility checklist:
-**[`real_data/acs/README.md`](../../real_data/acs/README.md)** (ACS year, PUMS type, PUMA vintage,
-weights, income handling, RF settings, seeds, permutation protocol).
+Full download / filters / recodes / seeds: [`real_data/acs/README.md`](../../real_data/acs/README.md).
 
-## Active suite: `min21/`
+```bash
+pip install -r requirements.txt
+.venv/bin/python real_data/acs/download_acs_ca_pums.py   # gitignored extract
+```
+
+The paper cohort (12,285 rows) is filtered at runtime — no separate cleaned CSV.
+
+## Settings (match Sec. 3.2)
 
 | Setting | Value |
 |---------|--------|
-| Cohort | CA, foreign-born, YOEP ≥ 2000, age 25–54, usual hours ≥ 40 |
-| Individuals | 12,285 |
-| PUMAs | 265 total; 212 eligible (size ≥ 21) |
-| Target index | 20 (person at position 21 within PUMA) |
-| o values | 0, 5, 10, 15, 20 |
-| Row order | Permuted within PUMA each replicate |
-| Global μ | Random forest (50 trees, min leaf 5), mean within-PUMA shrinkage |
-| GHCP score | Absolute \|Y − μ\| |
-| Std-CP | Studentized local half/half RF (recomputed with same seeds); finite mainly at larger $o$ |
+| Extract | 2018 ACS 1-year CA PUMS (2010 PUMA vintage) |
+| Cohort | Foreign-born, YOEP \(\ge 2000\), age 25–54, usual hours \(\ge 40\) |
+| Individuals / PUMAs | 12,285 people; 265 CA PUMAs; **212 eligible** (\(N_j\ge 21\)) |
+| Target | Individual at **position 21** (index 20) |
+| Initial sample \(o\) | \(0,5,10,15,20\) (first \(o\) permuted records) |
+| Local training | \(\tau=\lfloor o/2\rfloor\) as in paper (3) |
+| Row order | Uniform permutation within each selected PUMA |
+| Design | `uniform_one_target`: 20 reference PUMAs + 1 test PUMA |
+| Global \(\mu\) | RF, 50 trees, min leaf 5 |
+| Score | Absolute \(\lvert Y-\widetilde\mu\rvert\) |
+| \(U\) | Scalar 0 (no PUMA-level features) |
+| Std-CP | Studentized, randomized, local RF min leaf 5 |
+| \(\alpha\) | \(\{0.05,0.10,0.15,0.20\}\) (main text uses \(0.1\)) |
+| \(B\) | 1000 |
 
-### Directory layout
+### Layout
 
 ```
-min21/
-├── results/          # Per-alpha summaries (detailed CSVs local / gitignored)
-├── figures/          # Paper-style PDFs (B = 1000)
-├── summaries/        # Coverage/width tables for plotting
-├── diagnostics/      # Size-ignorability falsification checks (N_j vs summaries)
-├── stdcp_studentized/# Std-CP-only recompute manifests
-├── logs/             # Run logs
-├── seeds_manifest.json
-└── demo_b200/        # B = 200 verification runs (figures + summaries)
+acs/
+├── results/       # per-α summaries (detailed CSVs gitignored)
+├── figures/
+├── summaries/
+├── diagnostics/
+├── logs/
+└── seeds_manifest.json
 ```
 
 ### Reproduce
 
 ```bash
-# Production GHCP/HCP/baselines (B = 1000), skip Std-CP for speed
 .venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
-  --B 1000 --n_workers 7 --skip_stdcp --plot
+  --alphas 0.05,0.1,0.15,0.2 --B 1000 --n_workers 7 --skip_stdcp --plot
 
-# Recompute studentized local Std-CP with the same seeds; patch results + replot
-.venv/bin/python code/marginal/recompute_acs_stdcp_studentized_min21.py \
-  --B 1000 --n_workers 7 --alphas 0.2,0.1
-```
+.venv/bin/python code/marginal/recompute_acs_stdcp_randomized_min21.py \
+  --B 1000 --n_workers 7 --alphas 0.05,0.1,0.15,0.2
 
-Verification only (B = 200):
-
-```bash
-.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
-  --B 200 --n_workers 7 --skip_stdcp --plot
-```
-
-Plot from saved results:
-
-```bash
+.venv/bin/python code/marginal/plot_paper.py --suite acs
 .venv/bin/python real_data/acs/plot_dgp_style_paper_plots.py --suite rf_yoep_fb_min21
-```
 
-Size-ignorability diagnostics (regenerate `diagnostics/`):
-
-```bash
 .venv/bin/python real_data/acs/run_size_ignorability_diagnostics.py
 ```
 
-Core runner (all flags): `code/marginal/run_acs_experiments.py`  
-Cohort filters and design matrix: `real_data/acs/data_processing.py`  
-Std-CP recompute: `code/marginal/recompute_acs_stdcp_studentized_min21.py`
-
-## Archive
-
-Earlier ACS variants (stratified OLS/RF, studentized-only runs, YOEP-extended cohorts without age/hours filters, min31 permute, diagnostics) are under [`old/`](old/).
+Core runner: `code/marginal/run_acs_experiments.py`  
+Filters: `real_data/acs/data_processing.py`

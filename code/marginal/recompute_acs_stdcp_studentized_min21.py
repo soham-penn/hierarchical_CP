@@ -2,7 +2,7 @@
 """
 Recompute studentized Std-CP for the ACS min21 paper suite.
 
-Reuses stored seeds from paper-results/acs/min21/seeds_manifest.json:
+Reuses stored seeds from paper-results/acs/seeds_manifest.json:
   - group selection: seed + replicate_idx * 1009
   - row permutation: seed + replicate_idx * 1009 + 811
   - half/half train/cal split within target PUMA history: stdcp_split seed
@@ -34,7 +34,7 @@ from code.marginal import run_acs_experiments as acs
 from code.paths import PLOTS_MARGINAL
 from scores import make_quantile_seed
 
-SUITE_ROOT = PLOTS_MARGINAL / "acs" / "min21"
+SUITE_ROOT = PLOTS_MARGINAL / "acs"
 OUT_ROOT = SUITE_ROOT / "stdcp_studentized"
 SEED = 456
 QUANTILE_BASE_SEED = 456
@@ -270,7 +270,7 @@ def main() -> None:
 
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
     man = {
-        "suite": "acs/min21/stdcp_studentized",
+        "suite": "acs/stdcp_studentized",
         "seed": SEED,
         "quantile_base_seed": QUANTILE_BASE_SEED,
         "stdcp_score_type": "studentized",

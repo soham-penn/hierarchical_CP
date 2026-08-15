@@ -1,7 +1,63 @@
 # ACS data and preprocessing
 
 Entry point for the paper ACS suite: `code/marginal/run_acs_yoep_fb_min21_permute.py`  
-Low-level runner: `code/marginal/run_acs_experiments.py`
+Low-level runner: `code/marginal/run_acs_experiments.py`  
+Filters / design matrix: `real_data/acs/data_processing.py`
+
+---
+
+## Setup (run from repo root)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+| Package | Role |
+|---------|------|
+| `numpy` | arrays / RNG |
+| `pandas` | ACS CSV load, filters, recodes |
+| `scikit-learn` | `RandomForestRegressor` (global + Std-CP local μ/σ) |
+| `matplotlib` | paper figures |
+| `folktables` | download 2018 ACS 1-year CA PUMS |
+| `xgboost` | optional (non-paper Ding XGB suites only) |
+
+Dev env used for the shipped suite: Python **3.13.1**, packages pinned in `requirements.txt`.
+
+Then fetch the person extract (required; **not** committed to git):
+
+```bash
+.venv/bin/python real_data/acs/download_acs_ca_pums.py
+```
+
+---
+
+## Where the data lives
+
+| Artifact | Path | In git? |
+|----------|------|---------|
+| Raw CA PUMS extract (Census columns only) | `real_data/acs/data/acs_data_all50states.csv` | **No** (gitignored; ~14 MB / 378,817 rows) |
+| Folktables download cache | `real_data/acs/data/folktables_cache/` | **No** |
+| Filtered paper cohort (12,285 rows) | **Not a separate file** — built at runtime by `load_and_clean_acs_pums` | — |
+| Experiment CSVs / figures | `paper-results/acs/` | figures/summaries/diagnostics yes; `*_detailed.csv` gitignored |
+
+There is **no** shipped “pre-cleaned” cohort CSV. Reproducers download the raw extract once, then every runner applies the same filters in code.
+
+---
+
+## What we do / do not do to the data
+
+**We do not** invent person rows, impute incomes, add survey weights, inflate with `ADJINC`, winsorize, or append synthetic PUMAs. The download script keeps only the Census columns listed below and writes them as released.
+
+**We only** (in order, paper settings):
+
+1. Rename PUMS codes → internal names (`AGEP`→`age`, …).
+2. **Filter / drop** rows (CA, foreign-born, YOEP≥2000, age 25–54, hours≥40, positive income, complete cases).
+3. **Recode** for the design matrix: education bins, `married`/`female` indicators, `age_sq`, optional `entry_recency` (excluded from **X** in the paper run).
+4. Set outcome `y = PINCP` (raw dollars; no log).
+
+Paper path uses `min_hours=40`, so the optional `hours` NA→0 fill (only when hours filter is disabled) **does not** apply.
 
 ---
 
@@ -19,17 +75,11 @@ Low-level runner: `code/marginal/run_acs_experiments.py`
 | **Local CSV** | `real_data/acs/data/acs_data_all50states.csv` (378,817 CA person rows; filename is legacy) |
 | **Download script** | `real_data/acs/download_acs_ca_pums.py` |
 
-Re-download:
-
-```bash
-python real_data/acs/download_acs_ca_pums.py
-```
-
 ---
 
 ## Major items for the main paper (reproducibility checklist)
 
-These are the **minimum** details reviewers expect in the real-data section. All values below match the shipped `min21` suite (`paper-results/acs/min21/seeds_manifest.json`).
+These are the **minimum** details reviewers expect in the real-data section. All values below match the shipped ACS suite (`paper-results/acs/seeds_manifest.json`).
 
 ### 1. Sample definition
 
@@ -68,7 +118,7 @@ Raw columns retained in the CSV (see `download_acs_ca_pums.py`):
 
 **English (`ENG`):** treated as **unordered categorical** (one-hot with drop-first), not as ordinal. Census codes: 1=Very well, 2=Well, 3=Not well, 4=Not at all.
 
-**Derived (not in predictors for paper):** `entry_recency = max(YOEP) − YOEP`, `age_sq = age²`. **`entry_recency` is excluded** from the design matrix when the cohort is filtered on YOEP (`--exclude_entry_recency`, default in min21).
+**Derived:** `entry_recency = max(YOEP) − YOEP` (excluded from **X** on the paper YOEP-filtered run); `age_sq = age²` **is included** in **X**.
 
 ### 3. Missing values
 
@@ -94,59 +144,62 @@ No imputation. Rows failing any step are removed.
 
 ### 6. Predictor matrix (`build_design_matrix_acs`)
 
-Paper min21 settings (`--exclude_entry_recency`, `--exclude_cow` / `include_cow=False`):
+Paper min21 settings (`--exclude_entry_recency`, `--exclude_cow` / `include_cow=False`).
+Sec. 3.2 lists age, hours, marital status, sex, education, and English proficiency.
+The implementation uses that list and also includes `age_sq=age²`:
 
 - **Continuous:** `age`, `age_sq`, `hours`, `married`, `female`
 - **Categorical (dummy-coded, drop-first):** `educ_level` (3 dummies), `english` (3 dummies)
-- **Group covariate U:** scalar **0** (no PUMA-level features in μ-model beyond group index for shrinkage)
+- **Group covariate \(U\):** scalar **0** (no PUMA-level features)
 
 ### 7. Global μ-model (random forest)
 
 | Setting | Value |
 |---------|--------|
-| Implementation | `sklearn.ensemble.RandomForestRegressor` (`scikit-learn==1.8.0` in dev env) |
+| Implementation | `sklearn.ensemble.RandomForestRegressor` |
 | Trees | `n_estimators = 50` |
 | Min leaf size | `min_samples_leaf = 5` |
-| `max_features` | `⌊√(p_X + d_U)⌋` (default in `methods/mu_methods.py`) |
-| `random_state` | **123** (global RF fit) |
+| `max_features` | \(\lfloor\sqrt{p_X+d_U}\rfloor\) |
+| `random_state` | **123** |
 | `n_jobs` | 1 |
-| Within-PUMA adjustment | **Mean shrinkage** (`--within_group_mode mean`): blend global RF with within-PUMA mean of first **τ = o** history observations; merger weight **w_g = \|S_comp\| / (\|S_comp\| + τ)** with **c = 1** (Eq. (4) in paper) |
-| Baseline μ (HCP/Pooling/…) | Same RF hyperparameters, **pure global** (`tau=0`) |
+| Merger | paper **(3)**: \(\widetilde\mu=(1-\lambda_{\mathrm{local}})\widehat\mu^{\mathrm{global}}+\lambda_{\mathrm{local}}\overline Y\), \(\tau=\lfloor o/2\rfloor\), \(\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)\) with \(c=1\) (`--within_group_mode mean`) |
+| Baseline μ (HCP / pooling / …) | Same RF, **pure global** (\(\tau=0\)) |
 
-GHCP fits the global RF on **all calibration PUMAs** in the replicate; within-PUMA mean uses indices **0, …, o−1** in the (possibly permuted) target stream.
+GHCP fits the global RF on groups in \(S_{\mathrm{train}}\) for the replicate; \(\overline Y\) uses indices \(0,\ldots,\tau-1\) in the (permuted) stream. History size \(o\) is the number of initially observed test-group records; it is **not** equal to \(\tau\).
 
 ### 8. Conformal protocol (per replicate)
 
-Design: **`uniform_one_target`** (`paper-results/acs/min21/seeds_manifest.json`).
+Design: **`uniform_one_target`** (`paper-results/acs/seeds_manifest.json`), matching Sec. 3.2.
 
 1. **PUMA selection seed:** `456 + replicate_idx × 1009`
-   - Draw **20 calibration PUMAs** uniformly without replacement from eligible PUMAs (size ≥ 21).
+   - Draw **20 calibration PUMAs** uniformly without replacement from eligible PUMAs (size \(\ge 21\)).
    - Draw **1 target PUMA** uniformly from the remainder.
 2. **Row permutation seed:** `456 + replicate_idx × 1009 + 811`
-   - **Permute row order within each selected PUMA** (calibration + target) without replacement. Fixed ACS snapshot; only stream order is randomized.
-3. **Target individual:** **index 20** (21st person in permuted order); history for size **o** uses indices **0, …, o−1**.
-4. **History sizes o:** `{0, 5, 10, 15, 20}`.
-5. **No row bootstrap**; PUMA sizes equal observed ACS counts.
-6. **Replicates:** **B = 1000**; **α ∈ {0.05, 0.10, 0.15, 0.20}**.
+   - Permute row order within each selected PUMA.
+3. **Target individual:** **index 20** (paper: individual at **position 21**); history of size \(o\) uses indices \(0,\ldots,o-1\).
+4. **\(o\in\{0,5,10,15,20\}\)**. Restricted GHCP with **\(\eta=0.5\)**.
+5. No row bootstrap; PUMA sizes equal observed ACS counts.
+6. **\(B=1000\)**; **\(\alpha\in\{0.05,0.10,0.15,0.20\}\)** (main text Table 5 / Fig. 5 use \(\alpha=0.1\)).
 
-**Scores:** GHCP / S-HCP / baselines use **absolute** residuals `|Y − μ|`. Std-CP (when run): **studentized** with local RF σ; GHCP quantiles **deterministic** (`quantile_base_seed=456`); Std-CP quantiles **randomized**.
+**Scores:** GHCP / S-HCP / baselines use **absolute** residuals. Std-CP: **studentized** local RF (min leaf 5) with **randomized** quantiles; GHCP quantiles **deterministic** (`quantile_base_seed=456`).
 
-**HCP baseline train/cal split:** among the 20 calibration PUMAs, `alpha_selection = 0.5` for the standard HCP group split (`get_hcp_train_cal_split`).
+**HCP split:** among the 20 calibration PUMAs, `alpha_selection = 0.5` (equal training/calibration split in HCP).
 
 ### 9. Software and seeds (summary table for paper)
 
 | Component | Value |
 |-----------|--------|
-| Python env | `requirements.txt` (`numpy`, `pandas`, `scikit-learn`, `matplotlib`, `folktables`, `xgboost`) |
+| Python | 3.13 (dev); any recent 3.x with the packages below |
+| Install | `pip install -r requirements.txt` (pinned: numpy, pandas, scikit-learn, matplotlib, folktables, xgboost) |
 | Suite seed | **456** |
 | Quantile base seed | **456** (deterministic GHCP/HCP quantiles) |
 | RF `random_state` | **123** |
 | GHCP interval seed | `456 + (replicate_idx+1)×1009 + (o+1)×131 + 17` |
-| Manifest | `paper-results/acs/min21/seeds_manifest.json` |
+| Manifest | `paper-results/acs/seeds_manifest.json` |
 
 ### 10. Interpretation (size ignorability)
 
-The ACS study is an **empirical illustration under an approximate working model**, not validation of **N_j ⟂ (U_j, μ_j)**. See `run_size_ignorability_diagnostics.py` and `paper-results/acs/min21/diagnostics/`.
+The ACS study is an **empirical illustration under an approximate working model**, not validation of **N_j ⟂ (U_j, μ_j)**. See `run_size_ignorability_diagnostics.py` and `paper-results/acs/diagnostics/`.
 
 ---
 
@@ -161,7 +214,8 @@ python real_data/acs/export_puma_summary.py
 Reproduce experiments (production):
 
 ```bash
-.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py --B 1000 --n_workers 7 --skip_stdcp --plot
+.venv/bin/python code/marginal/run_acs_yoep_fb_min21_permute.py \
+  --alphas 0.05,0.1,0.15,0.2 --B 1000 --n_workers 7 --skip_stdcp --plot
 ```
 
 Plot from saved results:
@@ -195,4 +249,5 @@ Applied in order in `data_processing.py` (`load_and_clean_acs_pums`):
 
 ## Archive
 
-Superseded scripts and alternate cohorts are under `old/real_data/acs/`.
+Superseded ACS runners, bootstrap/stratified experiments, blood-pressure study, and old local
+plots/results: [`old/real_data/`](../../old/real_data/). See [`old/README.md`](../../old/README.md).

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -517,10 +516,10 @@ RF_YOEP_FB_MIN31_SUITE = AcsPlotSuite(
 )
 
 RF_YOEP_FB_MIN21_SUITE = AcsPlotSuite(
-    paper_root=PAPER_ROOT / "min21",
-    results_root=PAPER_ROOT / "min21" / "results",
+    paper_root=PAPER_ROOT,
+    results_root=PAPER_ROOT / "results",
     result_glob="true_marginal_permuted_rf_income_notrim*yoep2000*alpha*",
-    alpha_panel_values=(0.10, 0.20),
+    alpha_panel_values=(0.05, 0.10, 0.15, 0.20),
     title_prefix="ACS (RF, age 25–54, hours ≥40, YOEP≥2000, permute, size ≥21)",
     all_baselines_title_prefix="ACS (RF)",
     all_baselines_short_titles=True,
@@ -557,7 +556,7 @@ def configure_suite(suite: AcsPlotSuite) -> None:
     SUMMARY_DIR = PAPER_ROOT / "summaries"
     RESULT_GLOB = suite.result_glob
     RESULTS_ROOT = suite.results_root if suite.results_root is not None else (
-        REPO_ROOT / "results_marginal" / "acs"
+        RESULTS_ACS_MARGINAL
     )
     ALPHA_PANEL_VALUES = list(suite.alpha_panel_values)
     TITLE_PREFIX = suite.title_prefix
@@ -583,8 +582,7 @@ WIDTH_YLABEL = Y_LABEL_WIDTH
 
 
 def reset_output_dirs() -> None:
-    if PAPER_ROOT.exists():
-        shutil.rmtree(PAPER_ROOT)
+    # Never rmtree PAPER_ROOT: the paper suite writes figures next to results/.
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1277,6 +1275,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate ACS true-marginal paper plots.")
     parser.add_argument(
         "--predictor",
+        "--suite",
+        dest="predictor",
         choices=("ols", "ols_income", "ols_yoep2000", "ols_yoep2000_notrim", "ols_legacy", "ols_2012_mean", "ols_2000_mean", "ols_2012_correction", "old_log", "ding_xgb", "ding_xgb_no_within", "rf", "rf_2012_mean", "rf_2012_correction", "rf_2012_residual", "rf_trim2_mean", "rf_legacy", "rf_no_within", "rf_2000_mean", "rf_2000_mean_trim_top", "studentized", "rf_no_permute_min21", "rf_no_permute_min31", "rf_yoep_fb_min31", "rf_yoep_fb_min21", "rf_new_sampling"),
         default="ols",
         help="Result set including rf_new_sampling.",
