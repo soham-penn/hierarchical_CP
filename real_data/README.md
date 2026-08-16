@@ -1,6 +1,6 @@
 # Real data
 
-Active paper path is **ACS only**:
+Paper experiments use the ACS path only:
 
 | Path | Role |
 |------|------|

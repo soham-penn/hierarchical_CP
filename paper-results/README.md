@@ -1,12 +1,11 @@
-# Paper results (canonical deliverable)
+# Paper results
 
-Figures, tables, and summaries live **here**. Raw trial CSVs
-(`*raw_results*.csv`, ACS `*_detailed.csv`) are gitignored under
-`results/` and `acs/results/`; GitHub ships figures, summaries, and
-manifests. Defaults in `code/paths.py` point at this directory. Notation
-follows the paper (\(o\), \(\lambda_{\mathrm{local}}\), \(\eta\), \(\gamma\)).
+Figures, tables, and summaries for Sections 3.1–3.2 and Appendix D. Raw trial
+CSVs (`*raw_results*.csv`, ACS `*_detailed.csv`) are gitignored under
+`results/` and `acs/results/`. GitHub ships figures, summaries, and
+manifests. `code/paths.py` writes here by default.
 
-Launchers named after paper sections (wrappers around the long runner names):
+Section launchers:
 
 ```bash
 .venv/bin/python code/marginal/run_section_3_1.py --n_workers 8   # Sec. 3.1
@@ -44,23 +43,23 @@ paper-results/
 
 ## GHCP as implemented (all suites)
 
-Restricted GHCP, Algorithm 1, \(\eta=0.5\):
+Restricted GHCP, Algorithm 1, $\eta=0.5$:
 
-- \(\tau=\lfloor o/2\rfloor\), \(\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)\) (paper (3), \(c=1\)).
-- RF 50 trees / min leaf 5, absolute residual, \(K=20\), \(B=1000\).
+- $\tau=\lfloor o/2\rfloor$, $\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)$ (paper (3), $c=1$).
+- RF 50 trees / min leaf 5, absolute residual, $K=20$, $B=1000$.
 - GHCP/HCP quantiles deterministic; Std-CP randomized + studentized (ACS).
 
 ## Main simulations (Sec. 3.1)
 
 | Config | Group sizes | Chunk size | Target index |
 |--------|-------------|------------|--------------|
-| `fixedN21` | refs \(N_j\equiv 21\); test stream 36 | 125 | 35 |
-| `poissonNmean25` | \(N_j\sim\mathrm{Poi}(25)\), redraw 0 | 25 | 35 |
+| `fixedN21` | refs $N_j\equiv 21$; test stream 36 | 125 | 35 |
+| `poissonNmean25` | $N_j\sim\mathrm{Poi}(25)$, redraw 0 | 25 | 35 |
 
-Shared: \(\gamma=5\), \(U_j\sim\mathrm{Unif}([1,5]^5)\), \(\rho=0.5\), paper
-panels \(o\in\{0,5,10,15,20\}\) (CSVs also store \(25,30,35\)),
-\(\alpha\in\{0.05,0.1,0.15,0.2\}\), `BASE_SEED=457`. Both designs hold the
-scored outcome at test-stream **index 35**. History uses the **first \(o\)**
+Shared: $\gamma=5$, $U_j\sim\mathrm{Unif}([1,5]^5)$, $\rho=0.5$, paper
+panels $o\in\{0,5,10,15,20\}$ (CSVs also store $25,30,35$),
+$\alpha\in\{0.05,0.1,0.15,0.2\}$, `BASE_SEED=457`. Both designs hold the
+scored outcome at test-stream **index 35**. History uses the **first $o$**
 rows of that stream.
 
 ```bash
@@ -77,9 +76,9 @@ Detail: [`dgp/README.md`](dgp/README.md).
 
 | Paper | Figure / table | Reproduce |
 |-------|----------------|-----------|
-| Sec. 3.1.1, \(N_j\equiv 21\), \(\alpha=0.1\) | `dgp/figures/fixedN21_alpha0p1_coverage_width_by_o.pdf`, `dgp/tables/` `tab:dhcp-hcp-alpha01` | `run_section_3_1.py` then `plot_section_3_1.py` |
-| Sec. 3.1.1, \(N_j\equiv 21\), \(\alpha=0.05\) | `tab:dhcp-hcp-alpha005` | same |
-| Sec. 3.1.1, Poi(25), \(\alpha=0.1\) | `dgp/figures/poisson_alpha0p1_coverage_width_by_o.pdf`, `tab:dhcp-hcp-poisson-alpha01` | same |
+| Sec. 3.1.1, $N_j\equiv 21$, $\alpha=0.1$ | `dgp/figures/fixedN21_alpha0p1_coverage_width_by_o.pdf`, `dgp/tables/` `tab:dhcp-hcp-alpha01` | `run_section_3_1.py` then `plot_section_3_1.py` |
+| Sec. 3.1.1, $N_j\equiv 21$, $\alpha=0.05$ | `tab:dhcp-hcp-alpha005` | same |
+| Sec. 3.1.1, Poi(25), $\alpha=0.1$ | `dgp/figures/poisson_alpha0p1_coverage_width_by_o.pdf`, `tab:dhcp-hcp-poisson-alpha01` | same |
 | Sec. 3.1.2 within-group training | `dgp/figures/fixedN21_3_alpha0p1_within_vs_no_within.pdf` | same |
 | App. D.2 extra baselines | `dgp/figures/*_all_baselines_*.pdf`, `tab:dhcp-hcp-*-extra` | same |
 | App. D.2 Std-CP overlay | `dgp/figures/*_with_stdcp.pdf` | same |
@@ -90,10 +89,10 @@ empirical-Bayes merger was ever run.
 
 ## ACS (Sec. 3.2)
 
-2018 ACS 1-year CA PUMS; foreign-born; YOEP \(\ge 2000\); age 25–54; hours \(\ge 40\);
-eligible PUMAs size \(\ge 21\). Target = **position 21** (index 20); permute rows
-within PUMA each replicate; \(K=20\) reference PUMAs + 1 test PUMA;
-\(\alpha\in\{0.05,0.1,0.15,0.2\}\).
+2018 ACS 1-year CA PUMS; foreign-born; YOEP $\ge 2000$; age 25–54; hours $\ge 40$;
+eligible PUMAs size $\ge 21$. Target = **position 21** (index 20); permute rows
+within PUMA each replicate; $K=20$ reference PUMAs + 1 test PUMA;
+$\alpha\in\{0.05,0.1,0.15,0.2\}$.
 
 Prep + filter checklist: [`../real_data/acs/README.md`](../real_data/acs/README.md).
 Suite notes: [`acs/README.md`](acs/README.md).

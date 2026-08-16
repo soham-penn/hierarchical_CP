@@ -47,11 +47,11 @@ There is **no** shipped “pre-cleaned” cohort CSV. Reproducers download the r
 
 ---
 
-## What we do / do not do to the data
+## Preprocessing
 
-**We do not** invent person rows, impute incomes, add survey weights, inflate with `ADJINC`, winsorize, or append synthetic PUMAs. The download script keeps only the Census columns listed below and writes them as released.
+The download script keeps the Census columns listed below and writes them as released. It does not impute incomes, apply survey weights, inflate with `ADJINC`, winsorize, or add synthetic PUMAs.
 
-**We only** (in order, paper settings):
+Pipeline (paper settings), in order:
 
 1. Rename PUMS codes → internal names (`AGEP`→`age`, …).
 2. **Filter / drop** rows (CA, foreign-born, YOEP≥2000, age 25–54, hours≥40, positive income, complete cases).
@@ -151,7 +151,7 @@ The implementation uses that list and also includes `age_sq=age²`:
 
 - **Continuous:** `age`, `age_sq`, `hours`, `married`, `female`
 - **Categorical (dummy-coded, drop-first):** `educ_level` (3 dummies), `english` (3 dummies)
-- **Group covariate \(U\):** scalar **0** (no PUMA-level features)
+- **Group covariate $U$:** scalar **0** (no PUMA-level features)
 
 ### 7. Global μ-model (random forest)
 
@@ -160,27 +160,27 @@ The implementation uses that list and also includes `age_sq=age²`:
 | Implementation | `sklearn.ensemble.RandomForestRegressor` |
 | Trees | `n_estimators = 50` |
 | Min leaf size | `min_samples_leaf = 5` |
-| `max_features` | \(\lfloor\sqrt{p_X+d_U}\rfloor\) |
+| `max_features` | $\lfloor\sqrt{p_X+d_U}\rfloor$ |
 | `random_state` | **123** |
 | `n_jobs` | 1 |
-| Merger | paper **(3)**: \(\widetilde\mu=(1-\lambda_{\mathrm{local}})\widehat\mu^{\mathrm{global}}+\lambda_{\mathrm{local}}\overline Y\), \(\tau=\lfloor o/2\rfloor\), \(\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)\) with \(c=1\) (`--within_group_mode mean`) |
-| Baseline μ (HCP / pooling / …) | Same RF, **pure global** (\(\tau=0\)) |
+| Merger | paper **(3)**: $\widetilde\mu=(1-\lambda_{\mathrm{local}})\widehat\mu^{\mathrm{global}}+\lambda_{\mathrm{local}}\overline Y$, $\tau=\lfloor o/2\rfloor$, $\lambda_{\mathrm{local}}=\tau/(|S_{\mathrm{train}}|+\tau)$ with $c=1$ (`--within_group_mode mean`) |
+| Baseline μ (HCP / pooling / …) | Same RF, **pure global** ($\tau=0$) |
 
-GHCP fits the global RF on groups in \(S_{\mathrm{train}}\) for the replicate; \(\overline Y\) uses indices \(0,\ldots,\tau-1\) in the (permuted) stream. History size \(o\) is the number of initially observed test-group records; it is **not** equal to \(\tau\).
+GHCP fits the global RF on groups in $S_{\mathrm{train}}$ for the replicate; $\overline Y$ uses indices $0,\ldots,\tau-1$ in the (permuted) stream. History size $o$ is the number of initially observed test-group records; it is **not** equal to $\tau$.
 
 ### 8. Conformal protocol (per replicate)
 
 Design: **`uniform_one_target`** (`paper-results/acs/seeds_manifest.json`), matching Sec. 3.2.
 
 1. **PUMA selection seed:** `456 + replicate_idx × 1009`
-   - Draw **20 calibration PUMAs** uniformly without replacement from eligible PUMAs (size \(\ge 21\)).
+   - Draw **20 calibration PUMAs** uniformly without replacement from eligible PUMAs (size $\ge 21$).
    - Draw **1 target PUMA** uniformly from the remainder.
 2. **Row permutation seed:** `456 + replicate_idx × 1009 + 811`
    - Permute row order within each selected PUMA.
-3. **Target individual:** **index 20** (paper: individual at **position 21**); history of size \(o\) uses indices \(0,\ldots,o-1\).
-4. **\(o\in\{0,5,10,15,20\}\)**. Restricted GHCP with **\(\eta=0.5\)**.
+3. **Target individual:** **index 20** (paper: individual at **position 21**); history of size $o$ uses indices $0,\ldots,o-1$.
+4. $o\in\{0,5,10,15,20\}$. Restricted GHCP with $\eta=0.5$.
 5. No row bootstrap; PUMA sizes equal observed ACS counts.
-6. **\(B=1000\)**; **\(\alpha\in\{0.05,0.10,0.15,0.20\}\)** (main text Table 5 / Fig. 5 use \(\alpha=0.1\)).
+6. $B=1000$; $\alpha\in\{0.05,0.10,0.15,0.20\}$ (main text Table 5 / Fig. 5 use $\alpha=0.1$).
 
 **Scores:** GHCP / S-HCP / baselines use **absolute** residuals. Std-CP: **studentized** local RF (min leaf 5) with **randomized** quantiles; GHCP quantiles **deterministic** (`quantile_base_seed=456`).
 

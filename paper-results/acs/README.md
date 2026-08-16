@@ -1,8 +1,8 @@
 # ACS real-data experiments (paper Sec. 3.2)
 
-California ACS PUMS income prediction with GHCP (Algorithm 1, \(\eta=0.5\)), HCP, and conformal baselines.
+California ACS PUMS income prediction with GHCP (Algorithm 1, $\eta=0.5$), HCP, and conformal baselines.
 
-**Interpretation:** empirical illustration under the paper working model, not a test that Assumption A2 holds. See `diagnostics/`.
+Empirical illustration under the paper working model; size-ignorability checks are in `diagnostics/`.
 
 Full download / filters / recodes / seeds: [`real_data/acs/README.md`](../../real_data/acs/README.md).
 
@@ -18,19 +18,19 @@ The paper cohort (12,285 rows) is filtered at runtime — no separate cleaned CS
 | Setting | Value |
 |---------|--------|
 | Extract | 2018 ACS 1-year CA PUMS (2010 PUMA vintage) |
-| Cohort | Foreign-born, YOEP \(\ge 2000\), age 25–54, usual hours \(\ge 40\) |
-| Individuals / PUMAs | 12,285 people; 265 CA PUMAs; **212 eligible** (\(N_j\ge 21\)) |
+| Cohort | Foreign-born, YOEP $\ge 2000$, age 25–54, usual hours $\ge 40$ |
+| Individuals / PUMAs | 12,285 people; 265 CA PUMAs; **212 eligible** ($N_j\ge 21$) |
 | Target | Individual at **position 21** (index 20) |
-| Initial sample \(o\) | \(0,5,10,15,20\) (first \(o\) permuted records) |
-| Local training | \(\tau=\lfloor o/2\rfloor\) as in paper (3) |
+| Initial sample $o$ | $0,5,10,15,20$ (first $o$ permuted records) |
+| Local training | $\tau=\lfloor o/2\rfloor$ as in paper (3) |
 | Row order | Uniform permutation within each selected PUMA |
 | Design | `uniform_one_target`: 20 reference PUMAs + 1 test PUMA |
-| Global \(\mu\) | RF, 50 trees, min leaf 5 |
-| Score | Absolute \(\lvert Y-\widetilde\mu\rvert\) |
-| \(U\) | Scalar 0 (no PUMA-level features) |
+| Global $\mu$ | RF, 50 trees, min leaf 5 |
+| Score | Absolute $\lvert Y-\widetilde\mu\rvert$ |
+| $U$ | Scalar 0 (no PUMA-level features) |
 | Std-CP | Studentized, randomized, local RF min leaf 5 |
-| \(\alpha\) | \(\{0.05,0.10,0.15,0.20\}\) (main text uses \(0.1\)) |
-| \(B\) | 1000 |
+| $\alpha$ | $\{0.05,0.10,0.15,0.20\}$ (main text uses $0.1$) |
+| $B$ | 1000 |
 
 ### Layout
 
