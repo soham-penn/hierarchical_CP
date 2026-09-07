@@ -435,17 +435,22 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
                 ))
             scores.append(np.inf)
             weights = np.ones(len(scores)) / len(scores)
-            q_info = _select_conformal_q(
-                scores, weights, alpha,
-                quantile_mode=quantile_mode,
-                quantile_random_seed=quantile_random_seed,
-                quantile_rng=quantile_rng,
-                return_quantile_info=True,
-            )
-            q = q_info["q_randomized"]
+            # Per-α quantiles (same pattern as the donor path). Previously only
+            # alpha_list_eff[0] was evaluated and broadcast to all α.
+            qs_by_alpha = {}
+            for a in alpha_list_eff:
+                q_info_a = _select_conformal_q(
+                    scores, weights, a,
+                    quantile_mode=quantile_mode,
+                    quantile_random_seed=quantile_random_seed,
+                    quantile_rng=quantile_rng,
+                    return_quantile_info=True,
+                )
+                qs_by_alpha[a] = (q_info_a["q_randomized"], q_info_a)
+            q, q_info = qs_by_alpha[alpha_list_eff[0]]
         else:
-            q = np.inf
-            q_info = None
+            qs_by_alpha = {a: (np.inf, None) for a in alpha_list_eff}
+            q, q_info = np.inf, None
 
         X_target = Z_test[test_index_target]['X']
         mu_center = mu_method['predict_group_mu'](
@@ -456,17 +461,32 @@ def _compute_donor_hcp_randomized_interval_impl(U_calibration, Z_calibration, U_
         )
         mu_g_target = _mu_global_only(mu_method, global_model, X_target, U_test[0, :]) if global_model is not None else mu_center
         w_g_t = _shrinkage_weight(mu_method, global_model, offset_test)
-        interval = interval_from_threshold(
-            q, mu_center, X_target, U_test[0, :], scale_model, mu_global=mu_g_target, w_g=w_g_t,
-        )
-        out = {
-            'interval': interval,
-            'number_selected_groups': 1,
-            'donor_group_index': None,
-        }
-        if return_quantile_info or quantile_mode == "randomized":
-            merge_quantile_info(out, q_info)
-        return out
+
+        def _one_out_empty(q_val, q_info_val):
+            interval = interval_from_threshold(
+                q_val, mu_center, X_target, U_test[0, :], scale_model,
+                mu_global=mu_g_target, w_g=w_g_t,
+            )
+            out_a = {
+                'interval': interval,
+                'mu_hat': mu_center,
+                'number_selected_groups': 1,
+                'donor_group_index': None,
+            }
+            if return_quantile_info or quantile_mode == "randomized":
+                merge_quantile_info(out_a, q_info_val)
+            return out_a
+
+        if alpha_list is not None:
+            by_alpha = {a: _one_out_empty(qv, qi) for a, (qv, qi) in qs_by_alpha.items()}
+            return {
+                'by_alpha': by_alpha,
+                'interval': by_alpha[alpha_list_eff[0]]['interval'],
+                'mu_hat': mu_center,
+                'number_selected_groups': 1,
+                'donor_group_index': None,
+            }
+        return _one_out_empty(q, q_info)
 
     if tau_override is None:
         tau = int(np.floor(o_observed / 2))
